@@ -1,23 +1,19 @@
-"""Shared project configuration for research-template."""
+"""Repo-level shared configuration for the dissertation.
 
-import os
+Holds only constants and paths that are common across all studies. Each study
+defines its own data/result paths in ``projects/<study>/config.py`` and imports
+the shared constants below.
+"""
+
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent
 
-PROJECT_ROOT = Path(__file__).parent
+# Shared manuscript location (the integrated thesis).
+DRAFT_DIR = REPO_ROOT / "draft"
+PROJECTS_DIR = REPO_ROOT / "projects"
 
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", PROJECT_ROOT / "data" / "raw"))
-RESULT_DIR = PROJECT_ROOT / "result"
-DRAFT_DIR = PROJECT_ROOT / "draft"
-
-RAW_DATA_DIR = DATA_ROOT
-INTERIM_DATA_DIR = PROJECT_ROOT / "data" / "interim"
-PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed"
-
-FIGURE_DIR = RESULT_DIR / "figures"
-TABLE_DIR = RESULT_DIR / "tables"
-ANIMATION_DIR = RESULT_DIR / "animations"
-
+# Study-independent constants shared by all studies.
 GEO = {
     "earth_radius_m": 6_371_000.0,
 }

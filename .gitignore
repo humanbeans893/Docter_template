@@ -1,16 +1,16 @@
 # ============================
-# Raw / high-volume research data
+# Per-study raw / high-volume research data
 # ============================
-data/raw/**
-!data/raw/
-!data/raw/**/
-!data/raw/**/.gitkeep
-data/interim/**
-!data/interim/
-!data/interim/.gitkeep
-data/processed/**
-!data/processed/
-!data/processed/.gitkeep
+projects/**/data/raw/**
+!projects/**/data/raw/
+!projects/**/data/raw/**/
+!projects/**/data/raw/**/.gitkeep
+projects/**/data/interim/**
+!projects/**/data/interim/
+!projects/**/data/interim/.gitkeep
+projects/**/data/processed/**
+!projects/**/data/processed/
+!projects/**/data/processed/.gitkeep
 
 # Optional project-specific data locations
 /raw/
@@ -59,9 +59,9 @@ __pycache__/
 # ============================
 # Heavy result artifacts
 # ============================
-result/**/animations/**
-!result/**/animations/
-!result/**/animations/.gitkeep
+projects/**/result/**/animations/**
+!projects/**/result/**/animations/
+!projects/**/result/**/animations/.gitkeep
 
 # ============================
 # Jupyter Notebook checkpoints
@@ -104,14 +104,16 @@ Thumbs.db
 memory
 
 # ============================
-# LaTeX build artifacts
+# LaTeX build artifacts (root and \include subdirectories)
 # ============================
-draft/*.aux
-draft/*.bbl
-draft/*.blg
-draft/*.out
-draft/*.pdf
-draft/*.fls
-draft/*.fdb_latexmk
-draft/*.synctex.gz
-draft/*.toc
+draft/**/*.aux
+draft/**/*.bbl
+draft/**/*.blg
+draft/**/*.out
+draft/**/*.pdf
+draft/**/*.fls
+draft/**/*.fdb_latexmk
+draft/**/*.synctex.gz
+draft/**/*.toc
+draft/**/*.lof
+draft/**/*.lot

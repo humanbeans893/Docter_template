@@ -7,13 +7,11 @@ services:
     working_dir: /workspace
     environment:
       HOME: /workspace
-      DATA_ROOT: /data
       XDG_CACHE_HOME: /workspace/.cache
       UV_CACHE_DIR: /workspace/.cache/uv
       MPLCONFIGDIR: /workspace/.cache/matplotlib
     volumes:
       - .:/workspace
-      - ./data/raw:/data:ro
     shm_size: "16g"
     deploy:
       resources:

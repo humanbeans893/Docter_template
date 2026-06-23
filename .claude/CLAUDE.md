@@ -12,8 +12,8 @@ Think in English. Answer in the user's requested language.
 # Start the project container
 docker compose up -d
 
-# Run Python via Docker
-docker compose exec research-template uv run python <script.py>
+# Run Python via Docker (scripts live under a study)
+docker compose exec research-template uv run python projects/<study>/scripts/<script>.py
 docker compose exec research-template uv run pytest
 
 # Add packages via Docker
@@ -30,16 +30,23 @@ pwd && git branch && git status
 
 ## Project Overview
 
-This is a reusable research project template for analysis code, local data, generated results, and manuscript drafting. See `README.md` for the current directory layout.
+This is a monorepo for a PhD dissertation: multiple self-contained studies under `projects/` plus the integrated thesis manuscript under `draft/`. See `README.md` and `projects/README.md` for the current directory layout.
 
-**Key directories:**
+**Top-level directories:**
+- `projects/` — One self-contained study per subdirectory. `projects/_template/` is the skeleton to copy for a new study.
+- `draft/` — Integrated thesis (LuaLaTeX, `ltjsreport`), split into `preamble.tex`, `frontmatter/`, `chapters/`, `backmatter/`, plus `supplementary.tex` and `reference.bib`.
+- `config.py` — Repo-level shared constants only (`GEO`, `RANDOM`, `VISUALIZATION`).
+
+**Inside each `projects/<study>/`:**
 - `data/raw/` — Raw input data. Treat as immutable and do not commit large files.
 - `data/interim/` — Intermediate data generated from raw inputs.
 - `data/processed/` — Analysis-ready derived data.
-- `src/` — Reusable project code.
+- `src/` — Reusable code for this study.
 - `scripts/` — Execution scripts and one-off command entrypoints.
 - `result/` — Generated figures, tables, and analysis outputs.
-- `draft/` — Manuscript, supplementary material, references, and figure assets.
+- `config.py` — Study-local paths plus shared constants imported from the repo-root `config.py`.
+
+Studies are kept as plain subdirectories (monorepo), not git submodules. To extract a study later, use `git subtree split --prefix=projects/<study>`.
 
 ---
 
@@ -93,6 +100,7 @@ This is a reusable research project template for analysis code, local data, gene
 - Use host `lualatex` to compile files under `draft/`.
 - Standard command: `cd draft && lualatex -interaction=nonstopmode main.tex`.
 - For bibliography updates, run the full sequence: `lualatex` -> `bibtex main` -> `lualatex` -> `lualatex`.
+- The thesis uses the `ltjsreport` class and is split via `\include`. Edit chapters under `draft/chapters/` (one per study), front/back matter under `draft/frontmatter/` and `draft/backmatter/`, and packages in `draft/preamble.tex`. Always compile the whole document from `draft/main.tex`.
 
 ---
 
@@ -127,15 +135,17 @@ Before writing a new function, class, or helper, inspect the existing project mo
 
 ### Shared Module Areas
 
+Within each study (`projects/<study>/`):
 - `src/utils/` — General utilities such as paths, math helpers, plotting helpers, validation, randomness, and file I/O.
 - `src/models/` — Domain objects, typed data containers, loaders, and parsers.
 - `src/methods/` — Reusable analysis methods, statistical procedures, algorithms, and modeling code.
 - `src/analysis/` — Higher-level analysis workflows that combine utilities, models, and methods.
-- `config.py` — Shared paths, parameters, thresholds, and project-level constants.
+- `projects/<study>/config.py` — Study-local paths plus shared constants.
+- Repo-root `config.py` — Study-independent shared constants (`GEO`, `RANDOM`, `VISUALIZATION`).
 
 ### Reuse Procedure
 
-1. Search before writing: `rg -n "<concept-or-function-name>" src config.py scripts`.
+1. Search before writing: `rg -n "<concept-or-function-name>" projects config.py`.
 2. Check nearby working examples before inventing a new calling pattern.
 3. If a reusable implementation is missing, add it to the appropriate shared module first.
 4. Keep script-local helpers small and task-specific.
@@ -166,14 +176,14 @@ Before writing a new function, class, or helper, inspect the existing project mo
 
 ### Data Handling
 
-- Never edit files in `data/raw/` directly; raw data should be immutable.
+- Never edit files in any `projects/<study>/data/raw/` directly; raw data should be immutable.
 - Avoid editing `data/interim/` or `data/processed/` directly; regenerate derived data from scripts when possible.
 - Never commit large data files to Git.
 - Never delete data without explicit user confirmation.
 
 ### Generated Outputs
 
-- Treat `result/` as generated output.
+- Treat each study's `result/` as generated output.
 - Prefer regenerating figures and tables from source code.
 - Avoid committing large generated artifacts unless the user explicitly asks for them.
 
