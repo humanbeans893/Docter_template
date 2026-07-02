@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(docker compose up:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose exec research-template uv run:*)",
+      "Bash(docker compose exec research-template uv sync:*)",
+      "Bash(docker compose exec -T research-template uv run:*)",
+      "Bash(docker compose exec -T research-template uv sync:*)",
+      "Bash(make:*)",
+      "Bash(latexmk:*)",
+      "Bash(lualatex:*)",
+      "Bash(bibtex:*)",
+      "Bash(python3 tools/thesis_check.py:*)",
+      "Bash(uvx pre-commit run:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)"
+    ],
+    "deny": [
+      "Edit(projects/**/data/raw/**)",
+      "Write(projects/**/data/raw/**)",
+      "Read(.env)",
+      "Read(.env.*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect_raw_data.py"
+          }
+        ]
+      }
+    ]
+  }
+}

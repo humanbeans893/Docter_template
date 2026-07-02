@@ -1,44 +1,48 @@
-# projects/
+# projects/ — 研究スタディ置き場
 
-Each subdirectory here is one **self-contained study** of the dissertation.
-A study holds its own code, data, and outputs and does not depend on sibling
-studies. The integrated thesis manuscript lives in the repo-root `draft/`, where
-each study typically becomes one chapter.
+ここの各サブディレクトリが博士論文の **1つの研究(スタディ)** です。スタディは自前のデータ・コード・結果を持つ自己完結な単位で、他のスタディに依存しません。論文原稿はリポジトリルートの `draft/` にあり、通常 1スタディ=1章になります。
 
-## Layout of a study
+## スタディの構成
 
 ```text
 projects/<study>/
-├── data/{raw,interim,processed}/   # study-local data (gitignored except structure)
-├── src/{utils,models,methods,analysis}/
-├── scripts/                        # reproducible entry points
-├── result/{figures,tables,animations}/
-├── config.py                       # study-local paths + shared constants
+├── data/
+│   ├── raw/                 # 生データ(不変・Git対象外)
+│   ├── interim/             # 中間データ(スクリプトが生成)
+│   ├── processed/           # 解析用データ(スクリプトが生成)
+│   └── README.md            # データ台帳(入手元・取得日・再入手方法を必ず記入)
+├── src/{utils,models,methods,analysis}/   # 再利用コード
+│   └── utils/figures.py, tables.py        # 図表ヘルパー(来歴記録付き)
+├── scripts/                 # 実行入口(薄く保つ)
+├── result/{figures,tables,animations}/    # 生成物(手で編集しない)
+├── tests/                   # スタディ携行テスト(コピー直後から通る)
+├── config.py                # スタディ内パス + 共有定数
 └── README.md
 ```
 
-## Add a new study
-
-Copy the template directory and rename it:
+## 新しいスタディの作り方
 
 ```bash
-cp -r projects/_template projects/<your-study-name>
+cp -r projects/_template projects/<スタディ名>
+docker compose exec research-template uv run pytest projects/<スタディ名>
 ```
 
-Then point the thesis at it by adding a `\graphicspath` entry in
-`draft/preamble.tex` and an `\include{chapters/NN-<study>}` line in
-`draft/main.tex`.
+テストが通れば複製は健全です。あとは:
 
-## Why a monorepo (not git submodules)
+1. `data/raw/` にデータを置き、`data/README.md` に台帳を記入
+2. 解析コードを `src/` + `scripts/` に書く(Claude への頼み方の例はルートの README 参照)
+3. 図表は `save_figure` / `write_latex_table` で生成。**ファイル名は `<スタディ名>-<内容>`**
+4. 章にする段階になったら `draft/preamble.tex` の `\graphicspath` と `draft/main.tex` の `\include` に登録(手順の詳細は `draft/README.md`)
 
-All studies share this single git repository. We deliberately avoid nesting git
-repositories (submodules/subtrees): for a solo dissertation they add operational
-overhead (detached HEAD, two-step commits, clone gotchas) without benefit.
+Claude に頼むなら:
 
-If a study later needs to become a standalone public repository, extract it with
-its history at that point:
+> `_template` をコピーして `<スタディ名>` を作り、テストが通るのを確認して
+
+## なぜ monorepo(git submodule にしない)か
+
+1人の学位論文では、リポジトリ分割(submodule/subtree)は detached HEAD・二段コミットなどの運用コストばかりが先に立ちます。全スタディを1リポジトリで管理し、後で単独公開が必要になったスタディだけ履歴ごと切り出します:
 
 ```bash
 git subtree split --prefix=projects/<study> -b <study>-export
-# or, for a full rewrite: git filter-repo --path projects/<study>/
+# 完全な書き換えが要るなら: git filter-repo --path projects/<study>/
 ```
