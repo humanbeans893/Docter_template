@@ -1,0 +1,26 @@
+# Git hooks run on the HOST (commits happen on the host), via uvx:
+#   uvx pre-commit install        # one-time (or: make hooks)
+#   uvx pre-commit run --all-files
+# Escape hatch when a hook misfires: git commit --no-verify
+# `make lint` (ruff inside Docker, pinned by uv.lock) is the source of truth;
+# these hooks are a convenience layer and may lag slightly in version.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=1024] # data guard: nothing over 1 MB enters git
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: '\.bib$' # bib files are regenerated exports; avoid churn
+      - id: trailing-whitespace
+        exclude: '\.bib$'
+      - id: mixed-line-ending

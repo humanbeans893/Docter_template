@@ -55,6 +55,7 @@ __pycache__/
 .cache/
 .local/
 .pytest_cache/
+.ruff_cache/
 
 # ============================
 # Heavy result artifacts
@@ -117,3 +118,4 @@ draft/**/*.synctex.gz
 draft/**/*.toc
 draft/**/*.lof
 draft/**/*.lot
+draft/**/*.tdo

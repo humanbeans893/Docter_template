@@ -23,3 +23,36 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.1",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".cache"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "C4",  # comprehensions
+    "NPY", # numpy
+    "PD",  # pandas-vet
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts and tests insert the study root into sys.path before imports.
+"projects/*/scripts/**" = ["E402"]
+"projects/*/tests/**" = ["E402"]
+"tests/**" = ["E402"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests", "projects"]
+# importlib mode is load-bearing: every study ships identically named
+# tests/config.py modules, and only importlib gives them unique identities.
+addopts = "-ra --import-mode=importlib --strict-markers"
+norecursedirs = ["data", "result", ".cache", ".venv", "__pycache__"]

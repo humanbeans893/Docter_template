@@ -5,18 +5,20 @@ pyzotero (which hardcodes 127.0.0.1:23119) can reach the Zotero
 desktop app running on the Windows side.
 """
 
-import socket
 import select
+import socket
 import subprocess
-import threading
 import sys
+import threading
 
 
 def get_windows_gateway() -> str:
     """Get the Windows host IP from the default route."""
     result = subprocess.run(
         ["ip", "route", "show", "default"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     # e.g. "default via 172.30.224.1 dev eth0"
     return result.stdout.split()[2]
