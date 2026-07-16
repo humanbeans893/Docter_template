@@ -98,6 +98,16 @@ Thumbs.db
 *.log
 .claude/settings.local.json
 .claude/sessions/
+.mcp.json
+
+# External application state and literature attachments
+.external/
+external/
+zotero.sqlite*
+*.enl
+*.data/
+references/attachments/
+references/library/
 
 # ============================
 # Per-user shared memory

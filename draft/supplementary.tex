@@ -1,32 +1,38 @@
 % !TEX program = lualatex
 \documentclass[a4paper,10pt]{article}
 
+\input{thesis-config}
+
 \usepackage{luatexja}
 \usepackage[nfssonly,haranoaji,scale=1]{luatexja-preset}
 \usepackage{graphicx}
-\usepackage[top=25mm,bottom=25mm,left=25mm,right=25mm]{geometry}
-\usepackage{amsmath, amssymb, array, bm}
-\usepackage{float}
-\usepackage{booktabs}
-\usepackage{placeins}
-\usepackage{url}
-\usepackage{enumitem}
+\usepackage[
+  top=\ThesisMarginTop,
+  bottom=\ThesisMarginBottom,
+  left=\ThesisMarginInner,
+  right=\ThesisMarginOuter
+]{geometry}
+\usepackage{amsmath,amssymb,array,bm}
+\usepackage{booktabs,longtable}
+\usepackage{setspace}
 \usepackage{hyperref}
+\usepackage{bookmark}
 
-\setlength{\abovecaptionskip}{0pt}
-\setlength{\belowcaptionskip}{0pt}
+\setstretch{\ThesisLineSpacing}
+\graphicspath{{figures/}{../projects/study1/result/figures/}}
+\hypersetup{hidelinks,pdftitle={Supplementary Material for \ThesisTitleEN},pdfauthor={\ThesisAuthorEN}}
 
-\title{Supplementary Material for\\``Research Title''}
-\author{Author Name}
-\date{}
+\title{Supplementary Material for\\``\ThesisTitleEN''}
+\author{\ThesisAuthorEN}
+\date{\ThesisSubmissionDateEN}
 
 \begin{document}
 \maketitle
 
-\section*{Supplementary Figures and Tables}
+\section*{Supplementary Methods}
 
-\subsection*{Supplementary Figures}
+\section*{Supplementary Figures}
 
-\subsection*{Supplementary Tables}
+\section*{Supplementary Tables}
 
 \end{document}

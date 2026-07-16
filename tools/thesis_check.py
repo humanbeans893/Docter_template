@@ -26,6 +26,12 @@ Checks:
   W4 fig:/tab: labels never referenced
   W5 labels not following the prefix convention (ch:/sec:/subsec:/fig:/tab:/eq:/alg:/app:)
   W6 identical figure basenames in multiple \\graphicspath directories (shadowing)
+  W7 bare \\ref usage instead of \\cref
+  W8 required thesis metadata still contains a template placeholder
+  W9 duplicate PDF page anchors in the last build
+  W10 overfull boxes in the last build
+  E6 required thesis metadata is missing or still a placeholder (submission mode)
+  E7 TODO/FIXME remains (submission mode)
   I1 TODO/FIXME inventory (\\todo{...} and %-comments)
   I2 findings from draft/main.log (undefined references/citations, overfull boxes)
 """
@@ -41,9 +47,50 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LABEL_PREFIX = re.compile(r"^(ch|sec|subsec|fig|tab|eq|alg|app):")
 FIGURE_EXTENSIONS = (".png", ".pdf", ".jpg", ".jpeg", ".eps")
 
+REQUIRED_METADATA = {
+    "ThesisTitleEN",
+    "ThesisTitleJA",
+    "ThesisAuthorEN",
+    "ThesisAuthorJA",
+    "ThesisDegreeEN",
+    "ThesisDegreeJA",
+    "ThesisUniversityEN",
+    "ThesisUniversityJA",
+    "ThesisGraduateSchoolEN",
+    "ThesisGraduateSchoolJA",
+    "ThesisDepartmentEN",
+    "ThesisDepartmentJA",
+    "ThesisSupervisorEN",
+    "ThesisSupervisorJA",
+    "ThesisSubmissionDateEN",
+    "ThesisSubmissionDateJA",
+    "ThesisKeywordsEN",
+    "ThesisKeywordsJA",
+}
+PLACEHOLDER_VALUES = {
+    "Dissertation Title",
+    "博士論文題目",
+    "Author Name",
+    "著者名",
+    "博士（専門分野）",  # noqa: RUF001 - exact TeX placeholder
+    "University Name",
+    "大学名",
+    "Graduate School Name",
+    "研究科名",
+    "Department Name",
+    "専攻名",
+    "Supervisor Name",
+    "指導教員名",
+    "July 2026",
+    "2026年7月",
+    "keyword one; keyword two; keyword three",
+    "キーワード1；キーワード2；キーワード3",  # noqa: RUF001 - exact TeX placeholder
+}
+
 RE_INPUT = re.compile(r"\\(?:input|include)\{([^}]+)\}")
 RE_LABEL = re.compile(r"\\label\{([^}]+)\}")
 RE_REF = re.compile(r"\\(?:ref|eqref|pageref|autoref|vref|[cC]ref)\*?\{([^}]+)\}")
+RE_BARE_REF = re.compile(r"\\ref\*?\{([^}]+)\}")
 RE_CITE = re.compile(r"\\(?:[cC]ite[a-zA-Z]*|nocite)\*?(?:\[[^\]]*\]){0,2}\{([^}]+)\}")
 RE_GRAPHICS = re.compile(r"\\includegraphics\*?(?:\[[^\]]*\])?\{([^}]+)\}")
 RE_BIBLIOGRAPHY = re.compile(r"\\bibliography\{([^}]+)\}")
@@ -51,11 +98,13 @@ RE_GRAPHICSPATH = re.compile(r"\\graphicspath\{((?:\s*\{[^{}]*\}\s*)+)\}")
 RE_TODO_CMD = re.compile(r"\\todo(?:\[[^\]]*\])?\{([^}]*)")
 RE_TODO_COMMENT = re.compile(r"%.*?\b(TODO|FIXME)\b[:\s]*(.*)")
 RE_BIB_ENTRY = re.compile(r"^\s*@(\w+)\s*\{\s*([^,\s{}]+)\s*,")
+RE_METADATA = re.compile(r"\\newcommand\{\\(Thesis[A-Za-z]+)\}\{([^}]*)\}")
 
 RE_LOG_UNDEF_REF = re.compile(r"LaTeX Warning: Reference `([^']+)' on page")
 RE_LOG_UNDEF_CITE = re.compile(r"LaTeX Warning: Citation `([^']+)'")
-RE_LOG_OVERFULL = re.compile(r"^Overfull \\hbox")
+RE_LOG_OVERFULL = re.compile(r"^Overfull \\[hv]box")
 RE_LOG_ERROR = re.compile(r"^! (.+)")
+RE_LOG_DUPLICATE_ANCHOR = re.compile(r"ignoring duplicate destination with the name '([^']+)'")
 
 
 @dataclass
@@ -96,6 +145,7 @@ class TexIndex:
     def __init__(self):
         self.labels: dict[str, list[tuple[Path, int]]] = {}
         self.refs: dict[str, list[tuple[Path, int]]] = {}
+        self.bare_refs: list[tuple[str, Path, int]] = []
         self.cites: dict[str, list[tuple[Path, int]]] = {}
         self.graphics: list[tuple[str, Path, int]] = []
         self.todos: list[tuple[str, Path, int]] = []
@@ -143,6 +193,8 @@ def scan_tex(files: list[Path]) -> TexIndex:
             for match in RE_REF.finditer(line):
                 for key in match.group(1).split(","):
                     index._add(index.refs, key.strip(), where)
+            for match in RE_BARE_REF.finditer(line):
+                index.bare_refs.append((match.group(1).strip(), path, lineno))
             for match in RE_CITE.finditer(line):
                 for key in match.group(1).split(","):
                     key = key.strip()
@@ -226,6 +278,32 @@ def check_references(index: TexIndex, findings: list[Finding]) -> None:
                     "warning", "W4", f"{rel(path)}:{lineno}", f"label '{key}' is never referenced"
                 )
             )
+    for key, path, lineno in index.bare_refs:
+        findings.append(
+            Finding(
+                "warning",
+                "W7",
+                f"{rel(path)}:{lineno}",
+                f"bare \\ref{{{key}}} used; use \\cref instead",
+            )
+        )
+
+
+def check_metadata(files: list[Path], findings: list[Finding], *, submission: bool) -> None:
+    definitions: dict[str, tuple[str, Path, int]] = {}
+    for path in files:
+        for lineno, raw in enumerate(path.read_text(errors="replace").splitlines(), 1):
+            for match in RE_METADATA.finditer(strip_comments(raw)):
+                definitions[match.group(1)] = (match.group(2).strip(), path, lineno)
+
+    fallback_path = files[0] if files else REPO_ROOT / "draft" / "thesis-config.tex"
+    for name in sorted(REQUIRED_METADATA):
+        value, path, lineno = definitions.get(name, ("", fallback_path, 1))
+        if value and value not in PLACEHOLDER_VALUES:
+            continue
+        severity, code = ("error", "E6") if submission else ("warning", "W8")
+        reason = "is empty" if not value else f"still has placeholder value '{value}'"
+        findings.append(Finding(severity, code, f"{rel(path)}:{lineno}", f"\\{name} {reason}"))
 
 
 def check_citations(
@@ -320,6 +398,16 @@ def check_log(log_path: Path, findings: list[Finding]) -> None:
                 Finding("error", "I2", rel(log_path), f"LaTeX error: {error_match.group(1)}")
             )
             continue
+        duplicate_anchor = RE_LOG_DUPLICATE_ANCHOR.search(raw)
+        if duplicate_anchor:
+            findings.append(
+                Finding(
+                    "warning",
+                    "W9",
+                    rel(log_path),
+                    f"duplicate PDF destination '{duplicate_anchor.group(1)}'",
+                )
+            )
         for regex, label in ((RE_LOG_UNDEF_REF, "reference"), (RE_LOG_UNDEF_CITE, "citation")):
             match = regex.search(raw)
             if match:
@@ -333,12 +421,16 @@ def check_log(log_path: Path, findings: list[Finding]) -> None:
                 )
     if overfull:
         findings.append(
-            Finding("info", "I2", rel(log_path), f"{overfull} overfull \\hbox in last build")
+            Finding("warning", "W10", rel(log_path), f"{overfull} overfull box(es) in last build")
         )
 
 
 def run_checks(
-    draft_dir: Path, *, main_name: str = "main.tex", with_log: bool = True
+    draft_dir: Path,
+    *,
+    main_name: str = "main.tex",
+    with_log: bool = True,
+    submission: bool = False,
 ) -> list[Finding]:
     findings: list[Finding] = []
     files = resolve_include_graph(draft_dir / main_name, findings)
@@ -348,10 +440,14 @@ def run_checks(
     bib_keys = parse_bib(bib_paths, findings)
 
     check_references(index, findings)
+    check_metadata(files, findings, submission=submission)
     check_citations(index, bib_keys, findings)
     check_figures(index, graphicspath_dirs(index, draft_dir), findings)
     for text, path, lineno in index.todos:
-        findings.append(Finding("info", "I1", f"{rel(path)}:{lineno}", f"TODO: {text}"))
+        if submission:
+            findings.append(Finding("error", "E7", f"{rel(path)}:{lineno}", f"TODO: {text}"))
+        else:
+            findings.append(Finding("info", "I1", f"{rel(path)}:{lineno}", f"TODO: {text}"))
     if with_log:
         check_log(draft_dir / f"{Path(main_name).stem}.log", findings)
     return findings
@@ -381,6 +477,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--main", default="main.tex", help="root TeX file (default: main.tex)")
     parser.add_argument("--strict", action="store_true", help="warnings also fail the check")
+    parser.add_argument(
+        "--submission",
+        action="store_true",
+        help="treat required metadata placeholders and TODOs as errors",
+    )
     parser.add_argument("--no-log", action="store_true", help="skip main.log parsing")
     args = parser.parse_args(argv)
 
@@ -391,7 +492,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {rel(draft_dir / args.main)} not found", file=sys.stderr)
         return 2
 
-    findings = run_checks(draft_dir, main_name=args.main, with_log=not args.no_log)
+    findings = run_checks(
+        draft_dir,
+        main_name=args.main,
+        with_log=not args.no_log,
+        submission=args.submission,
+    )
     errors, warnings = print_report(findings)
     if errors or (args.strict and warnings):
         return 1

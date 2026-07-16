@@ -30,13 +30,9 @@ docker compose exec research-template uv run pytest projects/<スタディ名>
 テストが通れば複製は健全です。あとは:
 
 1. `data/raw/` にデータを置き、`data/README.md` に台帳を記入
-2. 解析コードを `src/` + `scripts/` に書く(Claude への頼み方の例はルートの README 参照)
+2. 解析コードを `src/` + `scripts/` に実装し、再現手順と依存関係を各スタディの README に記録
 3. 図表は `save_figure` / `write_latex_table` で生成。**ファイル名は `<スタディ名>-<内容>`**
 4. 章にする段階になったら `draft/preamble.tex` の `\graphicspath` と `draft/main.tex` の `\include` に登録(手順の詳細は `draft/README.md`)
-
-Claude に頼むなら:
-
-> `_template` をコピーして `<スタディ名>` を作り、テストが通るのを確認して
 
 ## なぜ monorepo(git submodule にしない)か
 

@@ -1,7 +1,7 @@
 [project]
 name = "research-template"
 version = "0.1.0"
-description = "Reusable research project template for data analysis, figures, and manuscript drafting"
+description = "Reproducible multi-study research and doctoral dissertation template"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

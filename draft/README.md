@@ -1,107 +1,71 @@
-# draft/ — 学位論文原稿の決まりごと
+# Dissertation manuscript
 
-原稿は LuaLaTeX + `ltjsreport`(英語本文・日本語混在可)。**必ず `main.tex` を起点に全体をビルド**します。
+英文本体・日英要旨の博士論文を LuaLaTeX + `ltjsreport` で構築します。大学固有の提出要項は [SUBMISSION_CHECKLIST.md](SUBMISSION_CHECKLIST.md) と照合してください。
 
-## ビルド
+## Build interface
 
 ```bash
-make pdf        # リポジトリルートから(推奨)。→ draft/main.pdf
-make check      # 参照・引用・図の整合性チェック
-make clean-tex  # 中間ファイルの掃除(PDF は残る)
+make pdf             # draft/main.pdf（リンク色・TODO表示あり）
+make pdf-final       # draft/submission.pdf（提出表示）
+make supplementary   # draft/supplementary.pdf
+make check           # 通常の整合性検査
+make check-final     # プレースホルダー、TODO、警告も失敗
+make submission      # pdf-final + check-final
+make clean-tex       # PDF以外の中間ファイルを削除
 ```
 
-`latexmk` が未導入なら一度だけ `sudo apt install latexmk`(なくても `make pdf` は手動シーケンスに自動フォールバック)。直接叩く場合は `cd draft && latexmk`。付録の `supplementary.tex` は独立文書: `cd draft && latexmk supplementary.tex`。
+`latexmk` がなければ Makefile が LuaLaTeX → BibTeX → LuaLaTeX×2 へフォールバックします。
 
-ビルドが失敗したら `draft/main.log` の最初の `!` 行を見る。よくあるエラーの対処表は `.claude/CLAUDE.md` の Pipeline 節にあります。
+## Configuration
 
-## ファイル構成
+題目、著者、学位、所属、指導教員、提出日、キーワード、余白、行間、任意ページは `thesis-config.tex` だけで設定します。表紙や `main.tex` に値を重複させないでください。
 
-| 場所 | 役割 |
+任意ページのフラグ:
+
+```latex
+\ThesisIncludeDeclarationtrue
+\ThesisIncludePublicationstrue
+\ThesisIncludeAbbreviationstrue
+\ThesisIncludeSymbolstrue
+\ThesisPrintListOfFigurestrue
+\ThesisPrintListOfTablestrue
+```
+
+図目次・表目次は、対応する図表を追加してから有効にします。
+
+## Structure
+
+| Path | Purpose |
 |---|---|
-| `main.tex` | 全体の組み立て(章の `\include`)。タイトル・著者もここ |
-| `preamble.tex` | パッケージと設定。**新スタディの `\graphicspath` 追加はここ** |
-| `notation.tex` | 論文全体で使う記号マクロの定義(1記号=1マクロ) |
-| `chapters/NN-<study>.tex` | 各スタディの章。`_chapter-template.tex` をコピーして作る |
-| `frontmatter/` `backmatter/` | 表紙・要旨・謝辞/付録 |
-| `reference.bib` | 文献データベース(論文全体で1つ) |
-| `figures/` | 原稿専用の図(概念図など)。**解析図はここに置かない** |
+| `main.tex` | 通常執筆版の文書構成 |
+| `submission.tex` | TODOを非表示にする提出版入口 |
+| `thesis-config.tex` | メタデータ、提出ページ、レイアウト |
+| `preamble.tex` | 共通パッケージ、PDF設定、図の探索先 |
+| `frontmatter/` | 表紙、日英要旨、謝辞、任意ページ |
+| `chapters/` | 一般序論、study章、総合考察 |
+| `backmatter/` | 付録 |
+| `notation.tex` | 論文全体の記号マクロ |
+| `reference.bib` | Zoteroから同期する共有文献DB |
 
-## ラベル規約
+表紙は無番号、前付けはローマ数字、本文はアラビア数字です。
 
-接頭辞を必ず付ける(`make check` が違反を警告します):
+## Labels and references
 
-| 接頭辞 | 対象 | 例 |
-|---|---|---|
-| `ch:` | 章 | `\label{ch:ocean-heat}` |
-| `sec:` / `subsec:` | 節 / 小節 | `\label{sec:ocean-heat-methods}` |
-| `fig:` | 図 | `\label{fig:ocean-heat-trend}` |
-| `tab:` | 表 | `\label{tab:ocean-heat-summary}` |
-| `eq:` | 数式 | `\label{eq:heat-budget}` |
-| `alg:` / `app:` | アルゴリズム / 付録 | `\label{app:a}` |
+ラベル接頭辞は `ch:`, `sec:`, `subsec:`, `fig:`, `tab:`, `eq:`, `alg:`, `app:`。参照は `\cref` を使い、裸の `\ref` は使いません。
 
-参照は**常に `\cref`**(`Figure 3` などの語を自動で付ける)。素の `\ref` は使わない。
+## Figures and tables
 
-```latex
-\cref{fig:ocean-heat-trend} shows ...        % → Figure 3.1 shows ...
-\cref{fig:a,fig:b,tab:c}                     % 複数まとめて参照可
-```
+- 解析図は study のスクリプトから `projects/<study>/result/figures/` へ生成します。
+- ファイル名は `<study>-<slug>` とし、本文ではパス・拡張子なしで参照します。
+- 表は `write_latex_table` で生成し、`\input{../projects/<study>/result/tables/...}` します。
+- `result/` 内の生成物を手編集しません。
 
-## 図(Figures)
+## Bibliography
 
-1. 図は各スタディのスクリプトが `save_figure()` で `projects/<study>/result/figures/` に生成する(手動配置しない)
-2. ファイル名は **`<study>-<内容>`**(例: `ocean-heat-trend`)。全スタディの図が1つの `\graphicspath` 名前空間を共有するため、接頭辞なしは衝突する
-3. 本文からは**パスなし・拡張子なし**で参照:
+Zotero + Better BibTeX から `reference.bib` へ自動エクスポートします。citation key は `authYYYYfirstword` を使用し、`file`, `local-url`, `annotation` などの私的・端末固有フィールドを除外します。詳細は [../docs/integrations.md](../docs/integrations.md) を参照してください。
 
-```latex
-\begin{figure}[tbp]
-  \centering
-  \includegraphics[width=0.8\linewidth]{ocean-heat-trend}
-  \caption{図の要点を1文で。}
-  \label{fig:ocean-heat-trend}
-\end{figure}
-```
+雛形の `lamport1994latex` と `\nocite` は、最初の実引用を追加した時点で削除します。引用情報を推測で作成しないでください。
 
-4. 新しいスタディを章にするときは `preamble.tex` の `\graphicspath` に1行追加:
+## Submission mode
 
-```latex
-\graphicspath{{figures/}{../projects/study1/result/figures/}{../projects/<study>/result/figures/}}
-```
-
-## 表(Tables)
-
-スタディ側で `write_latex_table()` が生成した `.tex` をそのまま読み込む:
-
-```latex
-\input{../projects/ocean-heat/result/tables/ocean-heat-summary.tex}
-```
-
-生成された `.tex` は手で編集しない(先頭に生成元と「do not edit by hand」が記載されます)。数値を直したければスクリプトを直して再生成。
-
-## 引用(Citations)
-
-- 文献は `reference.bib` に集約。**推奨ワークフロー**: Zotero でコレクション管理 → Better BibTeX プラグインで `reference.bib` に自動エクスポート(WSL2 での接続は `/zotero-connect`)
-- 引用キーは Better BibTeX の `authYYYYfirstword` 形式(例: `smith2020ocean`)
-- 本文では `\citep{smith2020ocean}`(括弧付き)/ `\citet{smith2020ocean}`(主語として)
-- **雛形の `lamport1994latex` はプレースホルダ**。最初の実引用を入れたら、`reference.bib` のエントリと `main.tex` の `\nocite{lamport1994latex}` を削除する
-- 引用スタイルは `unsrtnat`(出現順・番号)。変更する場合は `main.tex` の `\bibliographystyle` を編集
-
-## 数式・記号(Notation)
-
-繰り返し使う記号は `notation.tex` に **1回だけ** `\newcommand` で定義し、本文ではマクロを使う。表記ゆれ(`RMSE` と `rmse` の混在など)を構造的に防ぐ。
-
-## 下書きメモ(TODO)
-
-```latex
-\todo{単位を確認}                 % 余白メモ
-\todo[inline]{この節は要再構成}   % 本文中の目立つメモ
-```
-
-- `make check` が TODO を一覧化するので、消し忘れは提出前に必ず捕まる
-- **最終版**: `preamble.tex` の `\draftnotestrue` → `\draftnotesfalse` で全メモが一括非表示
-
-## 章の追加手順(スタディ→章)
-
-1. `chapters/_chapter-template.tex` を `chapters/NN-<study>.tex` にコピー
-2. `main.tex` の `\include` 行を有効化(コメントを外して実名に)
-3. `preamble.tex` の `\graphicspath` にスタディを追加
-4. `make pdf && make check` で緑を確認
+`make submission` は提出PDFを作成後、未入力メタデータ、空の要旨、TODO、未定義参照・引用、裸の `\ref`、ログ警告を検査します。雛形のままでは意図的に失敗します。
