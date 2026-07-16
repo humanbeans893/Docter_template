@@ -1,0 +1,7 @@
+services:
+  research-template:
+    volumes:
+      - type: bind
+        source: ${EXTERNAL_FILES_DIR:?Set EXTERNAL_FILES_DIR in the local .env file}
+        target: /external
+        read_only: true

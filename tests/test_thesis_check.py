@@ -90,3 +90,38 @@ def test_duplicate_figure_basenames_across_dirs(thesis_check, tmp_path):
 
     assert "W6" in codes(findings, "warning")
     assert codes(findings, "error") == set()
+
+
+def test_submission_mode_rejects_placeholders_and_todos(thesis_check, tmp_path):
+    (tmp_path / "main.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\input{thesis-config}\n"
+        "\\begin{document}\\todo{write abstract}\\end{document}\n"
+    )
+    required = sorted(thesis_check.REQUIRED_METADATA)
+    (tmp_path / "thesis-config.tex").write_text(
+        "\n".join(f"\\newcommand{{\\{name}}}{{Dissertation Title}}" for name in required)
+    )
+
+    draft_findings = thesis_check.run_checks(tmp_path, with_log=False)
+    submission_findings = thesis_check.run_checks(tmp_path, with_log=False, submission=True)
+
+    assert "W8" in codes(draft_findings, "warning")
+    assert "I1" in codes(draft_findings, "info")
+    assert "E6" in codes(submission_findings, "error")
+    assert "E7" in codes(submission_findings, "error")
+
+
+def test_bare_ref_and_duplicate_anchor_are_reported(thesis_check, tmp_path):
+    (tmp_path / "main.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\begin{document}\\section{A}\\label{sec:a}\\ref{sec:a}\\end{document}\n"
+    )
+    (tmp_path / "main.log").write_text(
+        "warning  (pdf backend): ignoring duplicate destination with the name 'page.1'\n"
+    )
+
+    findings = thesis_check.run_checks(tmp_path)
+
+    assert "W7" in codes(findings, "warning")
+    assert "W9" in codes(findings, "warning")

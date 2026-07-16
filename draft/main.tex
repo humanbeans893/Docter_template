@@ -1,35 +1,66 @@
 % !TEX program = lualatex
-\documentclass[a4paper,11pt]{ltjsreport}
+\documentclass[a4paper,11pt,english,oneside]{ltjsreport}
 
+\input{thesis-config}
 \input{preamble}
 
-\title{Dissertation Title}
-\author{Author Name}
-\date{\today}
+\title{\ThesisTitleEN}
+\author{\ThesisAuthorEN}
+\date{\ThesisSubmissionDateEN}
 
 \begin{document}
 
-% --- Front matter ---
+% The title page is unnumbered and must not create a duplicate PDF page anchor.
+\hypersetup{pageanchor=false}
+\pagenumbering{gobble}
 \input{frontmatter/titlepage}
-\input{frontmatter/abstract}
+\clearpage
+
+% Front matter uses lower-case Roman numerals.
+\hypersetup{pageanchor=true}
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+\ifThesisIncludeDeclaration
+  \input{frontmatter/declaration}
+\fi
+\input{frontmatter/abstract-ja}
+\input{frontmatter/abstract-en}
 \input{frontmatter/acknowledgments}
+\ifThesisIncludePublications
+  \input{frontmatter/publications}
+\fi
 
 \tableofcontents
+\ifThesisPrintListOfFigures
+  \listoffigures
+\fi
+\ifThesisPrintListOfTables
+  \listoftables
+\fi
+\ifThesisIncludeAbbreviations
+  \input{frontmatter/abbreviations}
+\fi
+\ifThesisIncludeSymbols
+  \input{frontmatter/symbols}
+\fi
 
-% --- Body: one \include per chapter. Each study is a chapter. ---
+% Main matter restarts at Arabic page 1.
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
 \include{chapters/01-introduction}
 \include{chapters/02-study1}
-% \include{chapters/03-study2}   % copy projects/_template, then enable this
+% \include{chapters/03-study2}
 \include{chapters/99-conclusion}
 
-% --- References (single shared database) ---
-% Placeholder so BibTeX succeeds on the fresh template. DELETE this \nocite
-% (and the placeholder entry in reference.bib) once you \cite real references.
+% Placeholder so BibTeX succeeds on a fresh clone. Delete this \nocite and
+% its reference.bib entry as soon as the first real citation is added.
 \nocite{lamport1994latex}
 \bibliographystyle{unsrtnat}
 \bibliography{reference}
 
-% --- Back matter ---
 \appendix
 \include{backmatter/appendix-a}
 

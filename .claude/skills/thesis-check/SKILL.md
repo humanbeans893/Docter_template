@@ -24,7 +24,7 @@ make pdf
 ```
 
 - 失敗したら `draft/main.log` の最初の `!` で始まる行から原因を特定し、平易な言葉で報告して**ここで停止**する(ビルドエラーの修正が先)。
-- よくあるエラーと対処は `.claude/CLAUDE.md` の「Common LaTeX errors」表を参照。
+- よくあるエラーと対処は `draft/README.md` を参照。
 
 ### 2. 整合性チェック
 

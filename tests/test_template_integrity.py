@@ -70,3 +70,42 @@ def test_study_config_loads_with_all_attributes(study: Path, load_module_by_path
         assert hasattr(cfg, attr), f"{study.name}/config.py is missing {attr}"
     assert cfg.STUDY_ROOT == study
     assert cfg.REPO_ROOT == REPO_ROOT
+
+
+def test_root_agent_and_public_repository_contract():
+    assert (REPO_ROOT / "AGENTS.md").is_file()
+    assert (REPO_ROOT / "CLAUDE.md").is_file()
+    assert "@AGENTS.md" in (REPO_ROOT / "CLAUDE.md").read_text()
+    assert not (REPO_ROOT / ".claude" / "CLAUDE.md").exists()
+    assert not (REPO_ROOT / ".codex" / "AGENTS.md").exists()
+
+    for path in (
+        "LICENSE",
+        "SECURITY.md",
+        "CONTRIBUTING.md",
+        ".github/CODEOWNERS",
+        ".github/dependabot.yml",
+        ".github/workflows/ci.yml",
+    ):
+        assert (REPO_ROOT / path).is_file(), f"public repository contract is missing {path}"
+
+
+def test_dissertation_frontmatter_contract():
+    draft = REPO_ROOT / "draft"
+    for path in (
+        "thesis-config.tex",
+        "submission.tex",
+        "frontmatter/abstract-en.tex",
+        "frontmatter/abstract-ja.tex",
+        "frontmatter/declaration.tex",
+        "frontmatter/publications.tex",
+        "frontmatter/abbreviations.tex",
+        "frontmatter/symbols.tex",
+        "SUBMISSION_CHECKLIST.md",
+    ):
+        assert (draft / path).is_file(), f"dissertation front matter is missing {path}"
+
+    main = (draft / "main.tex").read_text()
+    assert "english" in main.splitlines()[1]
+    assert "\\pagenumbering{roman}" in main
+    assert "\\pagenumbering{arabic}" in main

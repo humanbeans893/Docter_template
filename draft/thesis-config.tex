@@ -1,0 +1,54 @@
+% Dissertation metadata and university-dependent switches.
+% Keep all identifying and submission information in this file only.
+
+% --- Required metadata ------------------------------------------------------
+\newcommand{\ThesisTitleEN}{Dissertation Title}
+\newcommand{\ThesisTitleJA}{博士論文題目}
+\newcommand{\ThesisAuthorEN}{Author Name}
+\newcommand{\ThesisAuthorJA}{著者名}
+\newcommand{\ThesisDegreeEN}{Doctor of Philosophy}
+\newcommand{\ThesisDegreeJA}{博士（専門分野）}
+\newcommand{\ThesisUniversityEN}{University Name}
+\newcommand{\ThesisUniversityJA}{大学名}
+\newcommand{\ThesisGraduateSchoolEN}{Graduate School Name}
+\newcommand{\ThesisGraduateSchoolJA}{研究科名}
+\newcommand{\ThesisDepartmentEN}{Department Name}
+\newcommand{\ThesisDepartmentJA}{専攻名}
+\newcommand{\ThesisSupervisorEN}{Supervisor Name}
+\newcommand{\ThesisSupervisorJA}{指導教員名}
+\newcommand{\ThesisSubmissionDateEN}{July 2026}
+\newcommand{\ThesisSubmissionDateJA}{2026年7月}
+\newcommand{\ThesisKeywordsEN}{keyword one; keyword two; keyword three}
+\newcommand{\ThesisKeywordsJA}{キーワード1；キーワード2；キーワード3}
+
+% Optional identifiers may be left empty.
+\newcommand{\ThesisStudentID}{}
+
+% --- University-specific page switches -------------------------------------
+\newif\ifThesisIncludeDeclaration
+\ThesisIncludeDeclarationfalse
+\newif\ifThesisIncludePublications
+\ThesisIncludePublicationsfalse
+\newif\ifThesisIncludeAbbreviations
+\ThesisIncludeAbbreviationsfalse
+\newif\ifThesisIncludeSymbols
+\ThesisIncludeSymbolsfalse
+\newif\ifThesisPrintListOfFigures
+\ThesisPrintListOfFiguresfalse
+\newif\ifThesisPrintListOfTables
+\ThesisPrintListOfTablesfalse
+
+% --- Generic A4 defaults; replace these with the university requirements. --
+\newcommand{\ThesisMarginTop}{25mm}
+\newcommand{\ThesisMarginBottom}{25mm}
+\newcommand{\ThesisMarginInner}{30mm}
+\newcommand{\ThesisMarginOuter}{25mm}
+\newcommand{\ThesisLineSpacing}{1.5}
+
+% submission.tex defines \ThesisFinalBuild before loading main.tex.
+\newif\ifThesisFinal
+\ifdefined\ThesisFinalBuild
+  \ThesisFinaltrue
+\else
+  \ThesisFinalfalse
+\fi

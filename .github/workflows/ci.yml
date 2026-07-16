@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: true
+      - name: Sync locked environment
+        run: uv sync --locked --all-groups
+      - name: Test
+        run: uv run pytest
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Public repository safety check
+        run: uv run python tools/public_repo_check.py
+
+  thesis:
+    name: Thesis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install LuaLaTeX toolchain
+        run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          latexmk texlive-luatex texlive-lang-japanese texlive-latex-extra
+          texlive-science
+      - name: Build dissertation
+        run: make pdf
+      - name: Check dissertation
+        run: python3 tools/thesis_check.py
