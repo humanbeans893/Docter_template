@@ -17,6 +17,7 @@ jobs:
   python:
     name: Python
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -38,15 +39,15 @@ jobs:
   thesis:
     name: Thesis
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install LuaLaTeX toolchain
         run: >-
           sudo apt-get update && sudo apt-get install -y --no-install-recommends
-          latexmk texlive-luatex texlive-lang-japanese texlive-latex-extra
-          texlive-science
-      - name: Build dissertation
-        run: make pdf
+          texlive-luatex texlive-lang-japanese texlive-latex-extra texlive-science
+      - name: Build main, review, submission and supplementary PDFs
+        run: bash draft/compile.sh all
       - name: Check dissertation
-        run: python3 tools/thesis_check.py
+        run: python3 tools/thesis_check.py --all

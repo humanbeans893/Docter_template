@@ -1,8 +1,15 @@
 """Repo-level shared configuration for the dissertation.
 
-Holds only constants and paths that are common across all studies. Each study
-defines its own data/result paths in ``projects/<study>/config.py`` and imports
-the shared constants below.
+Holds the shared locations and two thesis-wide constants that every study's
+``projects/<study>/config.py`` re-exports:
+
+- ``VISUALIZATION``: the figure appearance (dpi, format, font) shared by all
+  chapters, so every chapter looks alike. It never changes a number.
+- ``GEO``: physical constants.
+
+Any value that can change a result (the seed, data selection, thresholds,
+model settings) goes into the experiment's ``params.py``, never here: editing
+a shared file must never change a finished experiment.
 """
 
 from pathlib import Path
@@ -13,15 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parent
 DRAFT_DIR = REPO_ROOT / "draft"
 PROJECTS_DIR = REPO_ROOT / "projects"
 
-# Study-independent constants shared by all studies.
+# Physical constants shared by all studies.
 GEO = {
     "earth_radius_m": 6_371_000.0,
 }
 
-RANDOM = {
-    "default_seed": 42,
-}
-
+# Figure appearance shared by all chapters (presentation only, never a number).
 VISUALIZATION = {
     "dpi": 300,
     "format": "png",

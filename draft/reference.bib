@@ -1,12 +1,26 @@
-% Shared bibliography for the whole dissertation.
-% Recommended workflow: manage references in Zotero and export this file with
-% Better BibTeX (citation keys: authYYYYfirstword, e.g. smith2020ocean).
+% Shared bibliography for the whole dissertation: the single source of truth for
+% bibliographic entries. It is not synced with a reference manager. To bring entries
+% from your own library, export them as BibTeX and hand them over; agents do not
+% connect to Zotero or any other reference manager.
+%
+% Before an entry is added (found by an agent or handed over), check it against the
+% original through its DOI: the publisher page, Crossref, PMC, or an archived copy.
+% Check every number quoted from it against the original text as well. Record the
+% check in a `verified` field:
+%   verified = {YYYY-MM-DD, doi:10.xxxx/yyyy},
+% Without a DOI use isbn:<ISBN> or url:<official page> instead of doi:. make check
+% lists entries without `verified` (an error with make check-final) and duplicate DOIs.
+%
+% Citation keys: authYYYYfirstword (e.g. smith2020ocean). Remove private or
+% machine-specific fields (file, local-url, annotation, personal notes) first.
+% Keep this comment free of the at sign: BibTeX would read it as an entry.
 %
 % ---------------------------------------------------------------------------
 % PLACEHOLDER ENTRY: delete it (and the matching \nocite in main.tex) as soon
-% as you add your first real reference. It only exists because BibTeX fails
-% when the document contains no citation at all, and the fresh template must
-% build green.
+% as you add your first real reference. It only shows how the References
+% chapter looks in the fresh template (compile.sh skips BibTeX while nothing is
+% cited). It has no `verified` field on purpose: make check-final fails until
+% it is gone.
 % ---------------------------------------------------------------------------
 @book{lamport1994latex,
   title     = {{LaTeX}: A Document Preparation System},

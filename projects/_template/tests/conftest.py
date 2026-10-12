@@ -51,3 +51,17 @@ def tables_mod():
     return load_module(
         STUDY_ROOT / "src" / "utils" / "tables.py", f"{STUDY_ROOT.name}_tables_under_test"
     )
+
+
+@pytest.fixture(scope="session")
+def provenance_mod():
+    return load_module(
+        STUDY_ROOT / "src" / "utils" / "provenance.py",
+        f"{STUDY_ROOT.name}_provenance_under_test",
+    )
+
+
+@pytest.fixture(scope="session")
+def experiment_mod(figures_mod):
+    """src/utils/experiment.py as the helpers see it (one module per file per process)."""
+    return figures_mod._experiment

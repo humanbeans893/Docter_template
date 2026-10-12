@@ -3,6 +3,9 @@
 
 \input{thesis-config}
 \input{preamble}
+% bash draft/compile.sh review --only <chapter> defines \ThesisIncludeOnly: a partial review
+% copy that keeps the chapter numbers and cross-references of the full one.
+\ifdefined\ThesisIncludeOnly\includeonly{\ThesisIncludeOnly}\fi
 
 \title{\ThesisTitleEN}
 \author{\ThesisAuthorEN}
@@ -10,15 +13,17 @@
 
 \begin{document}
 
-% The title page is unnumbered and must not create a duplicate PDF page anchor.
+% The title page is unnumbered and must not create a duplicate PDF page anchor. It is set
+% single-spaced so that the wider spacing of the review copy keeps it on one page.
 \hypersetup{pageanchor=false}
 \pagenumbering{gobble}
-\input{frontmatter/titlepage}
+\begingroup\setstretch{1}\input{frontmatter/titlepage}\endgroup
 \clearpage
 
-% Front matter uses lower-case Roman numerals.
+% Front matter uses lower-case Roman numerals. Line numbers of the review copy start here.
 \hypersetup{pageanchor=true}
 \pagenumbering{roman}
+\ThesisStartLineNumbers
 \setcounter{page}{1}
 
 \ifThesisIncludeDeclaration
@@ -51,12 +56,19 @@
 \setcounter{page}{1}
 
 \include{chapters/01-introduction}
+% Optional background chapter: copy chapters/_background-template.tex to
+% chapters/background.tex, drop its template-only block, and uncomment:
+% \include{chapters/background}
+
+% Study chapters in thesis order. tools/new_study.py inserts a new chapter above
+% the end marker; reorder the lines by hand when the argument needs another order.
 \include{chapters/02-study1}
-% \include{chapters/03-study2}
+% thesis:study-chapters:end
+
 \include{chapters/99-conclusion}
 
-% Placeholder so BibTeX succeeds on a fresh clone. Delete this \nocite and
-% its reference.bib entry as soon as the first real citation is added.
+% Placeholder so a fresh clone shows the References chapter. Delete this \nocite
+% and its reference.bib entry as soon as the first real citation is added.
 \nocite{lamport1994latex}
 \bibliographystyle{unsrtnat}
 \bibliography{reference}

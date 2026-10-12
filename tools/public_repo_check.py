@@ -9,6 +9,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# The host python3 runs this file; stop with one line instead of a TypeError on old ones.
+if sys.version_info < (3, 10):  # noqa: UP036
+    sys.exit(f"{Path(__file__).name}: needs python3 3.10 or newer, not {sys.version.split()[0]}")
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MAX_TRACKED_BYTES = 1_000_000
 
@@ -27,6 +31,15 @@ SECRET_PATTERNS = {
 
 USE_ACTION = re.compile(r"^\s*-?\s*uses:\s*[^#\s]+@([^#\s]+)", re.MULTILINE)
 PINNED_ACTION = re.compile(r"^[0-9a-f]{40}$")
+# Personal machine paths leak the user name and the local layout: Linux and macOS homes, the
+# Windows user folders seen from WSL (/mnt/c/Users/<name>/) and Windows paths (C:\Users\<name>\,
+# also with the doubled backslashes of JSON). The container's own home (/home/app) is part of the
+# template, not a personal path; a URL path such as https://example.org/home/x/ is not either.
+LOCAL_HOME_PATH = re.compile(
+    r"(?:(?<![\w.~-])(?:/home/(?!app/)|/Users/|/mnt/[A-Za-z]/Users/)"  # Linux, macOS, WSL
+    r"|\b[A-Za-z]:[\\/]+Users[\\/]+)"  # Windows
+    r"[A-Za-z0-9._-]+[\\/]"
+)
 
 
 @dataclass(frozen=True)
@@ -52,6 +65,8 @@ def forbidden_path_reason(path: Path, root: Path) -> str | None:
         return "application state or credentials must not be tracked"
     if path.suffix.lower() in FORBIDDEN_SUFFIXES:
         return f"{path.suffix} application/credential file must not be tracked"
+    if posix == ".codex/config.toml" or posix.endswith("/.codex/config.toml"):
+        return "Codex project settings can carry API keys; keep .codex/config.toml local"
     if posix.startswith("references/attachments/") or posix.startswith("references/library/"):
         return "literature attachments must remain outside Git"
     if re.match(r"^projects/[^/]+/data/raw/.+", posix) and path.name != ".gitkeep":
@@ -87,6 +102,15 @@ def scan_files(paths: list[Path], root: Path = REPO_ROOT) -> list[Finding]:
         for label, pattern in SECRET_PATTERNS.items():
             if pattern.search(text):
                 findings.append(Finding(relative, f"possible {label}"))
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for match in LOCAL_HOME_PATH.finditer(line):
+                findings.append(
+                    Finding(
+                        relative,
+                        f"local home path {match.group(0)!r} on line {lineno}: use a "
+                        "repo-relative path or a placeholder such as <PATH>",
+                    )
+                )
 
         if relative.startswith(".github/workflows/") and path.suffix in {".yml", ".yaml"}:
             for match in USE_ACTION.finditer(text):

@@ -1,0 +1,16 @@
+# NVIDIA GPU override. Enable it once in the local .env file, so that every docker compose and
+# make command (make up, and the automatic start of make test and make lint) keeps it:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+# With /external as well: COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml:docker-compose.files.yml
+# Passing -f to a single command is not enough: the next plain `make up` recreates the container
+# without the GPU, with no error. After changing COMPOSE_FILE, run `make up` (it recreates the
+# container: check for running jobs first).
+services:
+  research-template:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

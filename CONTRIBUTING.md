@@ -1,20 +1,24 @@
-# Contributing
+# 貢献の手引き
 
-## Workflow
+## 作業の流れ
 
-1. `main` から feature branch を作成します。
+1. `main` から作業用のブランチを作成します。
 2. 変更範囲に応じたテストを追加します。
-3. `make test lint` を実行します。原稿変更では `make pdf check`、公開関連では `make security` も実行します。
-4. pull request を作成し、CI と未解決コメントが残っていないことを確認します。
+3. `make test lint` を実行します。原稿を変えたときは `make pdf check`、公開に関わる変更では `make security` も実行します。
+4. pull request を作成し、CI が通り、未解決のコメントが残っていないことを確認します。
 
-`main` への直接 push、force push、生成物の手編集は行いません。
+`main` への直接の push、force push、生成物の手編集は行いません。
 
-## Data and privacy
+## データとプライバシー
 
-- 生データ、個人情報、資格情報、Zotero DB、文献PDFを commit しないでください。
-- 再現に必要なデータ情報は各 study の `data/README.md` に記録します。
-- 研究結果の図表はスクリプトから再生成できる状態にしてください。
+- 生データ、個人情報、資格情報、文献管理ソフトのデータベース(Zotero など)、文献PDFをコミットしないでください。
+- 再現に必要なデータの情報は各スタディの `data/README.md` に記録します。過去の結果は `make experiment-import` で取り込み実験を作り、由来と再現性を記録してから使います([docs/importing-past-results.md](docs/importing-past-results.md))。
+- 研究結果の図表と本文中の数値は、スクリプトから再生成できる状態にしてください。図表はコードで `result/` に書き出し、本文の数値は生成した値(`\val{...}`)で参照します。
 
-## Pull requests
+## 書誌
 
-PR本文には目的、主要変更、利用者への影響、実行した検証を記載してください。方法論やリポジトリ設計に影響する判断は ADR も追加します。
+書誌は `draft/reference.bib` だけで管理します。文献管理ソフトから書き出した BibTeX を受け取り、各エントリは DOI などで原典と照合してから追加し、`verified` フィールドを付けます。詳しくは [docs/integrations.md](docs/integrations.md) を参照してください。
+
+## pull request
+
+本文には目的、主な変更、利用者への影響、実行した検証を書きます。方法論やリポジトリの設計に影響する判断は、意思決定記録(`docs/decisions/`)にも残します。

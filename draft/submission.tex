@@ -1,4 +1,6 @@
 % !TEX program = lualatex
-% Final-mode entry point. Build through `make submission`.
+% Final-mode entry point: no \todo notes, no build stamp, plain links, and an undefined
+% generated value or a missing values file stops the build. Build through `make pdf-final`
+% (bash draft/compile.sh submission); `make submission` also runs the strict checks.
 \def\ThesisFinalBuild{1}
 \input{main.tex}

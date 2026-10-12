@@ -27,9 +27,11 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = [".cache"]
+extend-exclude = [".cache", "projects/*/src/vendor"]
 
 [tool.ruff.lint]
+# Full-width punctuation is normal in Japanese comments and strings.
+allowed-confusables = ["（", "）", "：", "，", "；"]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -43,9 +45,16 @@ select = [
     "RUF", # ruff-specific
 ]
 
+[tool.ruff.lint.isort]
+# Study modules are imported by name after a sys.path bootstrap (config, params, src).
+known-first-party = ["config", "params", "src"]
+
 [tool.ruff.lint.per-file-ignores]
-# Scripts and tests insert the study root into sys.path before imports.
+# Scripts, experiments and tests insert the study root into sys.path before imports.
 "projects/*/scripts/**" = ["E402"]
+"projects/*/experiments/**" = ["E402"]
+# params.py imports config for its default SOURCE_DIR; the import is unused once SOURCE_DIR is None (only a publication survives) or under /external.
+"projects/*/experiments/*/params.py" = ["F401"]
 "projects/*/tests/**" = ["E402"]
 "tests/**" = ["E402"]
 
@@ -55,4 +64,6 @@ testpaths = ["tests", "projects"]
 # importlib mode is load-bearing: every study ships identically named
 # tests/config.py modules, and only importlib gives them unique identities.
 addopts = "-ra --import-mode=importlib --strict-markers"
-norecursedirs = ["data", "result", ".cache", ".venv", "__pycache__"]
+# Keep the cache off the bind-mounted repository (AGENTS.md, environment rules).
+cache_dir = "$HOME/.cache/pytest"
+norecursedirs = ["data", "result", "out", "build", "vendor", ".cache", ".venv", "__pycache__"]

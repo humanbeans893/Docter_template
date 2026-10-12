@@ -1,51 +1,69 @@
 ---
 name: research-log
-description: Record session findings, decisions with rationale, and dead ends into docs/research-log.md; significant decisions also become ADRs under docs/decisions/. Always confirm with the user before writing.
+description: セッションで分かったこと・判断とその理由・行き止まりを docs/research-log.md に記録し、影響の大きい決定は docs/decisions/ の意思決定記録に、繰り返さない行き止まりと撤回は docs/guardrails.md に書く(撤回・訂正・置き換えの手順は AGENTS.md の「実験」)。書く前に必ずユーザーに確かめる
 ---
 
-# /research-log
+# 研究ログを書く
 
-セッションの研究内容(結果・判断・行き止まり)を `docs/research-log.md` に記録する。影響の大きい意思決定は `docs/decisions/` の ADR にも残す。
+セッションの研究の中身(結果・判断・行き止まり)を `docs/research-log.md` に記録します。影響の大きい決定は
+`docs/decisions/` の意思決定記録にも残し、繰り返してはいけないことは毎セッション読まれる `docs/guardrails.md` へ送ります。
 
-## When to use
+## 使うとき
 
-- 解析や執筆の節目(結果が出た・方針を決めた・行き詰まった)
+- 解析や執筆の節目(結果が出た、方針を決めた、行き詰まった)
 - ユーザーが「ログに残して」「今日の記録をして」と言ったとき
-- コード変更の記録が目的なら `/session-save` の方が適切。こちらは**研究内容**(何を試し、何が分かり、なぜそう判断したか)の記録
+- 現在の状態と次の作業は `write-handoff` スキルで `STATE.md` に書く。こちらは
+  **研究の中身**(何を試し、何が分かり、なぜそう判断したか)の記録
 
-## Steps
+## 手順
 
-### 1. 情報収集
+### 1. 材料を集める
 
 ```bash
 git log --oneline -5
 git status
 ```
 
-会話を振り返り、次の形式で下書きを作る:
+会話を振り返り、次の形で下書きを作る。実験の結果そのものは各実験の `summary.md`(今の結論)と `README.md`(経緯)が
+正本なので、ここにはリンクを書く。
 
 ```markdown
-## YYYY-MM-DD — <短いタイトル>
+## YYYY-MM-DD — <短い題>
 
-- **Goal**: 何をしようとしたか
-- **Done**: 実際にやったこと(実行したスクリプト・生成した図表・関連コミット)
-- **Decisions**: 下した判断とその理由
-- **Dead ends**: うまくいかなかったことと原因
-- **Next**: 次にやること
+- **目的**: 何をしようとしたか
+- **やったこと**: 実際にやったこと(実行したスクリプト・実験 `projects/<study>/experiments/NNN_<slug>`・生成した図表・関連コミット)
+- **判断**: 下した判断とその理由
+- **行き止まり**: うまくいかなかったことと原因
+- **次**: 次にやること
 ```
 
-### 2. ユーザー確認(必須)
+あわせて、下書きの中から次の2種類を拾い出す。
 
-下書きを提示して確認を取る。**確認なしに書き込まない**(誤った記録は将来のセッションを汚染する)。
+- **繰り返さない行き止まり**(新しい証拠が無い限り試さない方がよいこと) → `docs/guardrails.md` の
+  「新しい証拠なしに繰り返さないこと」の1行(スタディ、パターン、何が起きたか、証拠、再訪の条件)
+- **撤回・訂正・置き換え**(一度出した結論を取り下げた・直した・後の実験が答え直した) → `AGENTS.md` の「実験」の
+  「状態と撤回」の手順(`summary.md` と索引 `projects/<study>/experiments/EXP_SUMMARY.md` の状態欄。撤回なら
+  `docs/guardrails.md` の「撤回した主張」の1行)。状態欄は `撤回`・`訂正`・`置き換え` で始め、
+  `(YYYY-MM-DD、→ NNN_<slug>)` を足してよい。理由は `summary.md` に書く
 
-### 3. 書き込み
+### 2. ユーザーに確かめる(必須)
 
-`docs/research-log.md` の `<!-- newest entry below -->` マーカーの**直下**にエントリを挿入する(新しい順)。
+研究ログの下書きと、guardrails.md・索引・summary.md に書く行を一緒に示して確かめる。**確かめずに書き込まない**
+(誤った記録は後のセッションを汚す)。
 
-### 4. 重要な決定は ADR に
+### 3. 書き込む
 
-方法論の選択・データの除外基準・リポジトリ構成の変更など影響の大きい決定は、`docs/decisions/_adr-template.md` をコピーして `docs/decisions/NNNN-<slug>.md`(NNNN は次の連番)を作成し、ログエントリからリンクする。
+- `docs/research-log.md` の `<!-- newest entry below -->` の**直下**にエントリを入れる(新しい順)。
+- 繰り返さない行き止まりを `docs/guardrails.md` に書く。
+- 撤回・訂正・置き換えは手順どおり同じ書き込みで直す。その結論を使っている章・要旨・結論・`docs/thesis-plan.md` は、
+  原稿を直す作業を任されていなければ、直す必要があることを報告し `STATE.md` の次の作業に P0 で書く。
 
-### 5. 完了報告
+### 4. 重要な決定は意思決定記録に
 
-書き込んだファイルのパスを表示する。
+方法の選択、データの除外基準、発表版と違う値を論文で使う判断、リポジトリの構成の変更など影響の大きい決定は、
+`docs/decisions/_adr-template.md` を写して `docs/decisions/NNNN-<slug>.md`(`NNNN` は次の連番)を作り、
+ログのエントリからリンクする。
+
+### 5. 報告する
+
+書き込んだファイルのパスを示す。状態が変わったなら `write-handoff` スキルで `STATE.md` も更新する。

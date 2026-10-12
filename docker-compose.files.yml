@@ -1,3 +1,11 @@
+# Read-only /external mount for data that cannot live in the repository. Enable it once in the
+# local .env file, so that every docker compose and make command keeps it:
+#   EXTERNAL_FILES_DIR=/abs/path/on/the/host
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.files.yml
+# With the GPU as well: COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml:docker-compose.files.yml
+# Passing -f to a single command is not enough: the next plain `make up` recreates the container
+# without /external. After changing COMPOSE_FILE, run `make up` (it recreates the container:
+# check for running jobs first).
 services:
   research-template:
     volumes:
