@@ -121,6 +121,7 @@ def committed(tmp_path):
     """A committed repository with the study ``demo`` (the real git_state)."""
     repo = tmp_path / "repo"
     for name, text in {
+        ".gitignore": "__pycache__/\n*.py[cod]\n",  # as in the real repository
         "config.py": "X = 1\n",
         "pyproject.toml": "[project]\n",
         "docs/notes.md": "notes\n",
@@ -467,12 +468,27 @@ def test_params_are_checked_before_anything_is_cleared(start, cfg, run_file):
         (SimpleNamespace(SEED=True, PARAMS={}), "must pin SEED"),
         (SimpleNamespace(SEED=1), r"must define PARAMS = \{\.\.\.\}"),
         (SimpleNamespace(SEED=1, PARAMS=[1]), "must define PARAMS"),
+        # Values the record cannot hold: tuple keys, and str keys mixed with int keys.
+        (
+            SimpleNamespace(SEED=1, PARAMS={"n": 1, "bands": {(0, 10): "low"}}),
+            r"params\.py: PARAMS\['bands'\] cannot be recorded in params_used\.json "
+            r"\(keys must be str.*not tuple\): dict keys must be strings or numbers of one kind",
+        ),
+        (
+            SimpleNamespace(SEED=1, PARAMS={1: "a", "b": 2}),
+            r"params\.py: the keys of PARAMS cannot be recorded .*no str mixed with int",
+        ),
     ):
         with pytest.raises(AssertionError, match=message):
             with start(run_file, params, ["--overwrite"]):
                 pass
         assert (out / "kept.csv").is_file()
         assert _record(run_file)["status"] == "completed"
+    smoke = SimpleNamespace(SEED=1, PARAMS={"bands": None}, SMOKE={"bands": {(0, 1): "x"}})
+    with pytest.raises(AssertionError, match=r"params\.py: SMOKE\['bands'\] cannot be recorded"):
+        with start(run_file, smoke, ["--smoke"]):
+            pass
+    assert not (out / "smoke" / "params_used.json").exists()
 
 
 def test_every_sidecar_names_the_experiment_and_the_run(
@@ -689,6 +705,46 @@ def test_promote_destinations_are_checked(start, cfg, run_file):
     ]  # fmt: skip
 
 
+def test_promote_records_the_files_it_was_computed_from(start, cfg, run_file):
+    # Another experiment's promoted CSV, read here: the sidecar names it, so W14 and
+    # --list-generators can follow this output back to that experiment.
+    upstream = cfg.REPO_ROOT / "projects" / "other" / "result" / "tables" / "other-points.csv"
+    upstream.parent.mkdir(parents=True)
+    upstream.write_text("x\n1\n", encoding="utf-8")
+    digest = hashlib.sha256(b"x\n1\n").hexdigest()
+    entry = {"path": "projects/other/result/tables/other-points.csv", "sha256": digest}
+    with start(run_file, PARAMS, ["--smoke"]) as run:  # checked at the call, also here
+        run.out("demo-derived.csv").write_text("y\n2\n", encoding="utf-8")
+        for sources, message in (
+            ([upstream.with_name("missing.csv")], "source file does not exist: .*missing.csv"),
+            (str(upstream), "sources must be a list of paths, got: str"),
+            ([{**entry, "sha256": "ABC"}], "needs a lowercase 64-hex 'sha256'"),
+            ([{"sha256": digest}], r"each source must be \{'path'"),
+        ):
+            with pytest.raises(AssertionError, match=message):
+                run.promote("demo-derived.csv", sources=sources)
+        run.out("grid.nc").write_text("1\n", encoding="utf-8")
+        with pytest.raises(AssertionError, match="data/processed/ has no sidecar"):
+            run.promote("grid.nc", dest_dir=cfg.PROCESSED_DATA_DIR / run.name, sources=[upstream])
+    assert _record(run_file, "smoke")["staged"] == []
+    with start(run_file, PARAMS, []) as run:
+        run.out("demo-derived.csv").write_text("y\n2\n", encoding="utf-8")
+        run.promote("demo-derived.csv", sources=[upstream])
+        upstream.write_text("x\n9\n", encoding="utf-8")  # hashed at the call: what was read
+        run.out("demo-given.csv").write_text("y\n3\n", encoding="utf-8")
+        run.promote("demo-given.csv", sources=(entry,))  # e.g. from provenance.source_entry
+        run.out("demo-plain.csv").write_text("y\n4\n", encoding="utf-8")
+        run.promote("demo-plain.csv")
+    derived = _sidecar(cfg.TABLE_DIR, "demo-derived")
+    assert list(derived) == [
+        "artifact", "kind", "study", "script", "experiment", "created", "git_commit",
+        "git_dirty", "run", "files", "sources",
+    ]  # fmt: skip
+    assert derived["sources"] == [entry]
+    assert _sidecar(cfg.TABLE_DIR, "demo-given")["sources"] == [entry]
+    assert "sources" not in _sidecar(cfg.TABLE_DIR, "demo-plain")
+
+
 def test_large_outputs_replace_the_experiments_processed_directory(start, cfg, run_file, capsys):
     target = cfg.PROCESSED_DATA_DIR / "001_toy"
     target.mkdir(parents=True)
@@ -779,6 +835,74 @@ def test_an_interrupted_publication_is_rolled_back(start, cfg, run_file, capsys)
     out = capsys.readouterr().out
     assert "note: restored projects/demo/result/tables/demo-a.csv (publication killed)" in out
     assert "note: removed projects/demo/result/tables/demo-new.csv (publication killed)" in out
+
+
+@pytest.mark.parametrize(
+    ("signum", "stop", "receiver"),
+    [
+        (signal.SIGTERM, SystemExit, "process"),
+        (signal.SIGINT, KeyboardInterrupt, "process"),  # Ctrl-C
+        (signal.SIGHUP, SystemExit, "another thread"),  # e.g. a BLAS pool's thread
+    ],
+)
+def test_a_stop_after_the_commit_point_waits_until_the_run_is_recorded(
+    experiment_mod, start, tables_mod, cfg, run_file, monkeypatch, capfd, signum, stop, receiver
+):
+    # Stopped once the journal is gone, the run would be recorded as failed although
+    # result/ and data/processed/ already hold its outputs: the stop waits for the record.
+    target = cfg.PROCESSED_DATA_DIR / "001_toy"
+    with start(run_file, PARAMS, []) as run:
+        tables_mod.write_latex_values({"n": 1}, "demo-old", cfg)
+        run.out("big/a.nc").write_text("old\n", encoding="utf-8")
+        run.promote("big/a.nc", dest_dir=target / "big")
+    journal = cfg.STUDY_ROOT / "result" / ".publication.json"
+    real_unlink = os.unlink
+    sent = []
+
+    def unlink(path, *args, **kwargs):
+        real_unlink(path, *args, **kwargs)
+        if Path(path) == journal and not sent:  # the commit point
+            sent.append(signum)
+            if receiver == "process":
+                os.kill(os.getpid(), signum)
+            else:
+                thread = threading.Thread(
+                    target=lambda: signal.pthread_kill(threading.get_ident(), signum)
+                )
+                thread.start()
+                thread.join()
+
+    stoppers = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    before = [signal.getsignal(number) for number in stoppers]
+    monkeypatch.setattr(experiment_mod.os, "unlink", unlink)
+    with pytest.raises(stop) as stopped:
+        with start(run_file, PARAMS, ["--overwrite"]) as run:
+            tables_mod.write_latex_values({"n": 2}, "demo-new", cfg)
+            run.out("big/b.nc").write_text("new\n", encoding="utf-8")
+            run.promote("big/b.nc", dest_dir=target / "big")
+    monkeypatch.setattr(experiment_mod.os, "unlink", real_unlink)
+    assert sent == [signum]
+    if stop is SystemExit:
+        assert stopped.value.code == 128 + signum  # the stop still acts, after the record
+    record = _record(run_file)
+    assert (record["status"], "error" in record) == ("completed", False)
+    assert record["promoted"] == [
+        "projects/demo/result/tables/demo-new.csv",
+        "projects/demo/result/tables/demo-new.tex",
+        "projects/demo/data/processed/001_toy/",
+    ]
+    assert record["removed"] == [
+        "projects/demo/result/tables/demo-old.csv",
+        "projects/demo/result/tables/demo-old.tex",
+    ]
+    assert sorted(path.name for path in cfg.TABLE_DIR.iterdir()) == [
+        "demo-new.csv", "demo-new.provenance.json", "demo-new.tex"
+    ]  # fmt: skip
+    assert _files(target / "big") == {"b.nc": "new\n"}
+    assert _hidden(cfg.STUDY_ROOT / "result") == [] and _hidden(cfg.PROCESSED_DATA_DIR) == []
+    assert [signal.getsignal(number) for number in stoppers] == before
+    note = "[001_toy] publishing: the stop waits until the run is recorded"
+    assert note in capfd.readouterr().err
 
 
 def test_leftovers_of_a_committed_publication_are_cleaned(experiment_mod, cfg, capsys):

@@ -33,7 +33,7 @@
 ## 技術的な検証
 
 - [ ] `make test && make lint`
-- [ ] 作業ツリーがきれいな状態で、生成物を作り直しても変わらない: `python3 tools/thesis_check.py --list-generators` が出すコマンドを上から順にすべて実行し(実験は `--overwrite` 付きで、上流が先に並ぶ。実験の前の `out/` は消える)、その後 `git status --porcelain -- 'projects/*/result/*' ':(exclude)*.provenance.json'` が何も出さない。由来記録(`*.provenance.json`)は作った日時(`created`)とコミット(`git_commit`)だけが変わるので、タグを付ける前にコミットする
+- [ ] 作業ツリーがきれいな状態で、生成物を作り直しても変わらない: `python3 tools/thesis_check.py --list-generators` が出すコマンドを上から順にすべて実行し(実験は `--overwrite` 付きで、上流が先に並ぶ。実験の前の `out/` は消える)、その後 `git status --porcelain -- 'projects/*/result/*' ':(exclude)*.provenance.json'` が何も出さない。由来記録(`*.provenance.json`)は作った日時(`created`)とコミット(`git_commit`)だけが変わるので、タグを付ける前にコミットする。論文で使わない生成物(撤回した実験の図、診断用の図など。`make check` の I5)は `result/` に残したままでよい(撤回・中止・置き換えの実験は一覧に並ばず、論文が使う実験の使わない図は同じ中身で出直すので、どちらも差分にならない。完了した実験の図を手で消すと、ここで `??` として出る)
 - [ ] `make submission`(提出用の PDF と補足資料を作り、`make check-final` で2つを合わせて1回で検査する。どちらかで使っている図や書誌は、使っているとみなす)
 - [ ] `make security-history`
 - [ ] PDF を別の端末で開き、目次のリンク、フォント、図表、ページの順序を確認

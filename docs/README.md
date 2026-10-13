@@ -33,6 +33,6 @@
 | `feedback/YYYY-MM-DD-<reviewer>.md` | 指導教員・審査員の指摘と、その対応 | `feedback/_template.md` を写す(`feedback/README.md`) |
 
 - 実験の結果は、ここではなく各実験の `summary.md`(今の結論)と `README.md`(経緯)に書き(`projects/<study>/experiments/NNN_<slug>/`)、研究ログからリンクします。
-- 繰り返さない失敗は、研究ログに加えて `guardrails.md` にも1行で書きます。撤回は、実験の `summary.md` と索引に加えて `guardrails.md` にも1行書きます(手順は `AGENTS.md` の「実験」)。
+- 繰り返さない失敗は、研究ログに加えて `guardrails.md` にも1行で書きます。撤回は、実験の `summary.md` と索引に加えて `guardrails.md` にも1行書きます。訂正・置き換えも、古い主張がすでに外に出ている(送った版・投稿・発表)なら同じです(手順は `AGENTS.md` の「実験」)。
 - 研究ログと意思決定記録は、他の文書と同じく日本語で書きます。古いリポジトリの記録は写さず、`<repo>@<sha>:<path>` でリンクします。
 - サブディレクトリは、ファイルが増えてから切ります(雛形は最小の構成を保ちます)。

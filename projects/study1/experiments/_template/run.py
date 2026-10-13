@@ -25,7 +25,9 @@ import config  # this study's paths; experiment.start() reads it too
 import params
 
 # Keep these imports at the top: the commit every result is credited to is read here.
-from src.utils import experiment, figures, tables  # noqa: F401
+# (`tables as tables` tells lint the import is wanted before the first table is written.)
+from src.utils import experiment, figures
+from src.utils import tables as tables
 
 
 def main() -> None:
@@ -51,11 +53,16 @@ def main() -> None:
         #   figures.save_figure(fig, "study1-overview", config)
         #   tables.write_latex_table(summary, "study1-summary", config)
         #   tables.write_latex_values(
-        #       {"n": n, "rmse": rmse}, "study1-main", config,
+        #       {"n": n, "rmse": rmse},
+        #       "study1-main",
+        #       config,
         #       formats={"rmse": "{:.2f}"},
         #   )
         #   run.promote("study1-points.csv")  # a run.out() file
         #   run.promote("grid.nc", dest_dir=config.PROCESSED_DATA_DIR / run.name)  # large
+        # What is made from another experiment's result/tables/*.csv or data/processed/
+        # names those files, so that make check can trace it back: sources=[path, ...] in
+        # the calls above (in run.promote() for result/tables/ only).
         # Register a values file once in draft/values.tex; the text then writes
         # \val{study1-main-rmse}.
         # Presentation code (styling, layout) lives in src/ or in a scripts/ promotion

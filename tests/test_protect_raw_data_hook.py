@@ -68,6 +68,43 @@ BLOCKED = [
     f"sort -o {R}/a.csv a.csv",
     f"gzip {R}/a.csv",
     f"xz -k {R}/a.csv",
+    # In-place rewriters (encoding, line endings), renamers and tools that write an output file
+    f"shred -u {R}/a.csv",
+    f"sed -I '' 's/a/b/' {R}/a.csv",
+    f"sed -ni 's/a/b/p' {R}/a.csv",
+    f"perl -CSD -0777 -pi.bak -e 's/a/b/' {R}/a.csv",
+    f"dos2unix {R}/legacy/src/metrics.csv",
+    f"unix2dos -q {R}/a.csv",
+    f"mac2unix -k {R}/a.csv",
+    f"dos2unix -n a.csv {R}/b.csv",
+    f"dos2unix -n {R}/a.csv b.csv -o {R}/c.csv",
+    f"cd {R} && dos2unix a.csv",
+    f"nkf -w --overwrite {R}/legacy/src/metrics.csv",
+    f"nkf --in-place=.bak -w {R}/a.csv",
+    f"nkf -w -O a.csv {R}/b.csv",
+    f"iconv -f CP932 -t UTF-8 {R}/a.csv -o {R}/a.csv",
+    f"iconv -c --output={R}/b.csv -f CP932 a.csv",
+    f"iconv -f CP932 -t UTF-8 {R}/a.csv | sponge {R}/a.csv",
+    f"awk -i inplace '{{print}}' {R}/a.csv",
+    f"gawk -iinplace -F, -f fix.awk {R}/a.csv",
+    f"gawk --include=inplace -v OFS=, '{{$1=$1}} 1' {R}/a.csv",
+    f"gawk '@include \"inplace\"; {{print}}' {R}/a.csv",
+    f"patch {R}/a.csv < fix.diff",
+    f"patch -i fix.diff {R}/a.csv",
+    f"patch -p1 -o {R}/b.csv a.csv fix.diff",
+    f"patch -d {R}/legacy/src -p1 < fix.diff",
+    f"cd {R}/legacy/src && patch -p1 < /tmp/fix.diff",
+    f"patch -p1 <<'EOF'\n--- a/{R}/a.csv\n+++ b/{R}/a.csv\n@@ -1 +1 @@\n-x\n+y\nEOF",
+    f"git apply <<'EOF'\ndiff --git a/{R}/a.csv b/{R}/a.csv\n--- a/{R}/a.csv\n+++ b/{R}/a.csv\n"
+    "@@ -1 +1 @@\n-x\n+y\nEOF",
+    f"cd {R} && git apply /tmp/fix.diff",
+    f"rename 's/ /_/g' {R}/legacy/src/*",
+    f"perl-rename -v 's/\\.CSV$/.csv/' {R}/*.CSV",
+    f"rename .CSV .csv {R}/legacy/src/*.CSV",
+    f"split -l 1000 {R}/big.csv {R}/part_",
+    f"cd {R} && split -l 1000 big.csv",
+    f"csplit -f {R}/part {R}/big.csv '/^#/' '{{*}}'",
+    f"uniq {R}/a.csv {R}/b.csv",
     # Archives and downloads
     f"tar -xzf old.tar.gz -C {R}/legacy/old",
     f"tar xf old.tar --directory={R}/legacy/old",
@@ -93,6 +130,13 @@ BLOCKED = [
     "find projects -name '*.tmp' -ok rm {} \\;",
     "find projects/study1/data -okdir rm {} \\;",
     "find projects -type f -exec sed -i 's/a/b/' {} +",
+    "find projects/study1 -name '*.csv' -exec dos2unix {} +",
+    "find . -name '*.csv' -exec nkf -w --overwrite {} \\;",
+    "find projects -name '*.csv' -exec iconv -f CP932 -t UTF-8 {} -o {}.utf8 \\;",
+    "find projects -name '*.csv' -exec gawk -i inplace '{print}' {} +",
+    "find projects -name '* *' -exec rename 's/ /_/g' {} +",
+    "find projects -name '*.csv' | xargs dos2unix",
+    f"find {R} -name '*.csv' -exec dos2unix {{}} +",
     "find . -type f -exec sh -c 'rm \"$1\"' _ {} \\;",
     "find projects -type f -name '*.csv' | xargs rm -f",
     "find . -name '*.csv' -print0 | xargs -0 rm",
@@ -172,6 +216,39 @@ ALLOWED = [
     f"gzip -c {R}/a.csv > /tmp/a.csv.gz",
     f"zstd -d {R}/a.zst -o projects/study1/data/interim/a",
     f"grep -rn depth {R} > projects/study1/data/interim/hits.txt",
+    # Converting or splitting raw files into files outside raw, and read-only modes
+    f"nkf --guess {R}/a.csv",
+    f"nkf -w {R}/a.csv > projects/study1/data/interim/a.csv",
+    f"iconv -f CP932 -t UTF-8 {R}/a.csv -o projects/study1/data/interim/a.csv",
+    f"iconv -f CP932 -t UTF-8 {R}/a.csv | sponge projects/study1/data/interim/a.csv",
+    f"dos2unix -n {R}/a.csv projects/study1/data/interim/a.csv",
+    f"dos2unix -ic {R}/*.csv",
+    f"dos2unix -O {R}/a.csv > projects/study1/data/interim/a.csv",
+    f"awk -F, '{{print $1}}' {R}/a.csv",
+    f"awk -v n=1 -f prog.awk {R}/a.csv",
+    "gawk -i inplace '{print}' projects/study1/data/interim/a.csv",
+    f"perl -MList::Util=sum -lane 'print sum @F' {R}/a.csv",
+    f"perl -Ilib -ne 'print if /id/' {R}/a.csv",
+    f"perl -CSDi -ne 'print' {R}/a.csv",
+    f"sed -n '1p' {R}/a.csv",
+    f"rename -n 's/ /_/g' {R}/legacy/src/*",
+    "rename 's/ /_/g' projects/study1/experiments/001_x/out/*",
+    f"split -l 1000 {R}/big.csv projects/study1/data/interim/part_",
+    f"csplit -f projects/study1/data/interim/part {R}/big.csv '/^#/' '{{*}}'",
+    f"uniq -c {R}/a.csv",
+    f"sort {R}/a.csv | uniq > projects/study1/data/interim/u.csv",
+    f"patch -o /tmp/a.csv {R}/a.csv < fix.diff",
+    f"cd {R} && patch --dry-run -p1 < /tmp/fix.diff",
+    "patch -p1 < fix.diff",
+    "patch -p1 <<'EOF'\n--- a/src/x.py\n+++ b/src/x.py\n@@ -1 +1 @@\n-a\n+b\nEOF",
+    "git apply fix.patch",
+    "git apply --check fix.patch",
+    f"cat <<'EOF' > /tmp/fix.diff\n--- a/{R}/a.csv\n+++ b/{R}/a.csv\nEOF",
+    "find projects -name '*.csv' -exec iconv -f CP932 -t UTF-8 {} \\;",
+    "find . -name '*.csv' -exec awk 'NR==1' {} \\;",
+    "find projects -name '*.csv' | xargs dos2unix -i",
+    "find projects -name '*.csv' | xargs nkf --guess",
+    "find projects/study1/experiments -name '*.csv' -exec dos2unix {} +",
     # Writing next to raw, but not into it
     "mkdir -p projects/study1/data/interim/acquired/x",
     "rm -rf projects/study1/data/interim/tmp",
@@ -247,6 +324,28 @@ def test_working_directory_inside_raw(tmp_path):
     raw.mkdir(parents=True)
     assert run_bash("touch new.csv", tmp_path, cwd=raw).returncode == 2
     assert run_bash("sha256sum * > /tmp/inputs.sha256", tmp_path, cwd=raw).returncode == 0
+
+
+def test_patch_and_git_apply_check_the_files_a_diff_file_names(tmp_path):
+    hunk = "@@ -1 +1 @@\n-x\n+y\n"
+    (tmp_path / "raw.diff").write_text(f"--- a/{R}/a.csv\t2024-01-01\n+++ b/{R}/a.csv\n{hunk}")
+    (tmp_path / "ok.diff").write_text(f"--- a/src/x.py\n+++ b/src/x.py\n{hunk}")
+    for command in (
+        "patch -p1 < raw.diff",
+        "patch -p1 -i raw.diff",
+        "patch --input=raw.diff",
+        "git apply raw.diff",
+        "git apply --index -p1 - < raw.diff",
+    ):
+        assert run_bash(command, tmp_path).returncode == 2, command
+    for command in (
+        "patch -p1 < ok.diff",
+        "git apply ok.diff",
+        "patch --dry-run -p1 < raw.diff",
+        "git apply --check raw.diff",
+        "git apply --cached raw.diff",
+    ):
+        assert run_bash(command, tmp_path).returncode == 0, command
 
 
 def test_symlink_into_raw_is_resolved(tmp_path):

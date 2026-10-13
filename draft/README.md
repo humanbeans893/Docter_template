@@ -112,6 +112,7 @@ bash draft/compile.sh --help
 - **表**は `write_latex_table` で `projects/<study>/result/tables/` に書き出し、`\input{../projects/<study>/result/tables/<name>}` で読みます。
 - `projects/*/experiments/*/out/` や `projects/*/data/` のファイルを原稿から直接読んではいけません(`make check` が誤りにします)。使う図表は、コードで `result/` に書き出します。
 - `result/` の生成物は手で直しません。直すときはスタディのスクリプトを実行し直します。
+- `\newcommand`(`\renewcommand`・`\providecommand`・`\DeclareRobustCommand`)で定義し、`\includegraphics`・`\label`・`\cref`・`\cite`・`\val` を包むマクロは、`make check` が使う箇所で引数を埋めて読むので、それが置く図にも W11・W14・W15 が出ます。`\def` や `\NewDocumentCommand` のマクロは展開せず、I6 を出すだけで、それが置くものは検査しません。
 
 ### 本文の数値(`\val`)
 

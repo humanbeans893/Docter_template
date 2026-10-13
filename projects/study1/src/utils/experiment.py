@@ -13,13 +13,15 @@ checks ``params.py`` (``SEED``, ``PARAMS``, ``SMOKE``) before anything is
 cleared, clears what an earlier run left there, and keeps
 ``out/params_used.json`` (the run record) up to date: at the start, at every
 ``run.stage()`` and at the end. SIGTERM, SIGHUP and Ctrl-C are recorded as a
-failed run; ``sys.exit(0)`` inside the body is recorded as failed too (as in
-research-template).
+failed run, except once publication starts swapping files into place: then the
+signal waits until the run is recorded as completed, and acts after that.
+``sys.exit(0)`` inside the body is recorded as failed (as in research-template).
 
 While the run is active, ``THESIS_EXPERIMENT_RUN`` names its record. The
 helpers in ``figures.py`` and ``tables.py`` then write into the run's
 ``out/staged/`` instead of ``result/``, and ``run.promote()`` names a
-``run.out()`` file for ``result/tables/`` or ``data/processed/NNN_<slug>/``.
+``run.out()`` file for ``result/tables/`` or ``data/processed/NNN_<slug>/`` (with
+``sources=``, as for the helpers, when it was made from another run's files).
 Names, kinds and destinations are checked at the call, also under ``--smoke``,
 so a mistake surfaces in seconds. Only a full run whose body completes
 publishes, all or none: under a per-study lock and through a journal
@@ -32,8 +34,8 @@ interrupted or ``--smoke`` run never changes ``result/`` or ``data/processed/``.
 This module is also the one place that says which code an artifact depends on
 (``code_pathspec``: this study's ``src/``, ``scripts/``, ``config.py`` and
 ``experiments/**/*.py``, and the repository's ``config.py``, ``pyproject.toml``
-and ``uv.lock``), which commit a run started from, and which run is active
-(``active_run``). Code that is not committed when the run starts, or that
+and ``uv.lock``; never bytecode), which commit a run started from, and which run
+is active (``active_run``). Code that is not committed when the run starts, or that
 changes during it, never stops the run: what it writes is recorded with the
 start commit and ``git_dirty: true``, with a warning (``make check`` W15).
 ``run.promote()`` files are checked when they are published, the helpers'
@@ -62,7 +64,7 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -87,6 +89,9 @@ MAX_FILE_BYTES = 1_000_000  # tracked files over 1 MB are refused (tools/public_
 STUDY_CODE_PATHS = ("src", "scripts", "config.py")
 STUDY_CODE_GLOB = f"{EXPERIMENTS}/**/*.py"
 REPO_CODE_PATHS = ("config.py", "pyproject.toml", "uv.lock")
+# Bytecode is never code: Python writes it beside the sources wherever no .gitignore
+# (or PYTHONPYCACHEPREFIX) keeps it out of git's sight.
+NOT_CODE_GLOBS = ("**/__pycache__/**", "**/*.pyc")
 
 # The key under which figures.py / tables.py load this file (their
 # _load_experiment_module): one module per file per process.
@@ -96,6 +101,9 @@ _GLOB_SPECIALS_RE = re.compile(r"([*?\[\\])")
 # Publication temporaries beside a destination: .<name>.<pid>.part / .<name>.<pid>.previous
 _TEMP_RE = re.compile(r"^\.(?P<name>.+)\.(?P<pid>\d+)\.(?P<kind>part|previous)$")
 _EXTENSION_RE = re.compile(r"[A-Za-z0-9]+")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+# Turned into a failed run, except from the swap until the run is recorded (Run._hold).
+_STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
 
 
 # --- Which code, which commit -------------------------------------------------
@@ -113,6 +121,7 @@ def code_pathspec(repo_root: Path, study_root: Path) -> list[str] | None:
         *(f":(literal){prefix}{name}" for name in STUDY_CODE_PATHS),
         f":(glob){glob_prefix}{STUDY_CODE_GLOB}",
         *(f":(literal){name}" for name in REPO_CODE_PATHS),
+        *(f":(exclude,glob){pattern}" for pattern in NOT_CODE_GLOBS),
     ]
 
 
@@ -410,6 +419,40 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _source_entries(sources, repo_root: Path) -> list[dict]:
+    """``sources=``: the files an output was made from, as ``{"path", "sha256"}`` entries.
+
+    The helpers' contract (figures/tables ``sources=``): a path (``str`` or ``Path``)
+    names an existing file, recorded repo-relative when it lies in the repository, with
+    its sha256 now; a mapping is a complete entry (``src.utils.provenance.source_entry``).
+    """
+    if sources is None:
+        return []
+    assert isinstance(sources, list | tuple), (
+        f"sources must be a list of paths, got: {type(sources).__name__}"
+    )
+    entries = []
+    for item in sources:
+        if isinstance(item, str | os.PathLike):
+            path = Path(item)
+            assert path.is_file(), f"source file does not exist: {path}"
+            entries.append({"path": _display(path, repo_root), "sha256": _sha256(path)})
+            continue
+        assert isinstance(item, Mapping) and isinstance(item.get("path"), str), (
+            "each source must be {'path': <repo-relative str>, 'sha256': <hex>}, got: " + repr(item)
+        )
+        assert isinstance(item.get("sha256"), str) and _SHA256_RE.match(item["sha256"]), (
+            f"source {item['path']!r} needs a lowercase 64-hex 'sha256' "
+            "(src.utils.provenance.source_entry computes both)"
+        )
+        entries.append(dict(item))
+    try:
+        json.dumps(entries)
+    except TypeError as exc:
+        raise AssertionError(f"sources must be JSON-serialisable (use str paths): {exc}") from None
+    return entries
+
+
 def params_sha256(seed, values: dict) -> str:
     """Hash of the seed and the effective parameters (in the run record and every sidecar)."""
     text = json.dumps(
@@ -431,6 +474,7 @@ def _read_params(params: ModuleType, smoke: bool) -> tuple[int, dict]:
         "params.py must define PARAMS = {...}: every value that can change the result (may be {})"
     )
     values = dict(params.PARAMS)
+    small: dict = {}
     if smoke:
         small = getattr(params, "SMOKE", None)
         assert isinstance(small, dict), (
@@ -439,7 +483,27 @@ def _read_params(params: ModuleType, smoke: bool) -> tuple[int, dict]:
         unknown = sorted((key for key in small if key not in values), key=str)
         assert not unknown, f"params.SMOKE keys missing from params.PARAMS: {unknown}"
         values.update(small)
+    _check_recordable(seed, values, small)
     return seed, values
+
+
+def _check_recordable(seed, values: dict, small: dict) -> None:
+    """Refuse parameters the run record cannot hold (checked before anything is cleared)."""
+    try:
+        params_sha256(seed, values)  # the strictest dump: the record's, with sorted keys
+    except (TypeError, ValueError) as exc:
+        culprits = []
+        for key, value in values.items():
+            try:
+                params_sha256(seed, {key: value})
+            except (TypeError, ValueError):
+                culprits.append(f"{'SMOKE' if key in small else 'PARAMS'}[{key!r}]")
+        where = ", ".join(culprits) or "the keys of PARAMS"
+        raise AssertionError(
+            f"params.py: {where} cannot be recorded in {RECORD} ({exc}): dict keys must be "
+            "strings or numbers of one kind (no tuples, no str mixed with int), e.g. "
+            '{"0-10": "low"}'
+        ) from None
 
 
 def _remove(path: Path) -> None:
@@ -618,10 +682,13 @@ class Run:
         self.record = record
         self._cfg, self._record_path = cfg, record_path
         self._repo_root = Path(cfg.REPO_ROOT)
-        # run.promote() entries: result/tables/ artifact -> (source, file name), and
-        # data/processed/NNN_<slug>/ relative path -> source.
-        self._tables: dict[str, tuple[Path, str]] = {}
+        # run.promote() entries: result/tables/ artifact -> (source, file name, sources),
+        # and data/processed/NNN_<slug>/ relative path -> source.
+        self._tables: dict[str, tuple[Path, str, list[dict]]] = {}
         self._processed: dict[str, Path] = {}
+        # While publication commits: the handlers a stop signal replaced, and the signals
+        # that arrived meanwhile (see _hold).
+        self._held: tuple[dict, list[int]] | None = None
         self._start = time.perf_counter()
 
     def _rel(self, path: Path) -> str:
@@ -662,7 +729,7 @@ class Run:
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 
-    def promote(self, name: str, dest_dir=None) -> Path:
+    def promote(self, name: str, dest_dir=None, *, sources=None) -> Path:
         """Publish a ``run.out()`` file when the run completes; checked now.
 
         ``dest_dir`` is ``config.TABLE_DIR`` (the default: a ``<study>-<what>.<ext>`` file
@@ -670,12 +737,19 @@ class Run:
         ``config.PROCESSED_DATA_DIR / run.name`` (large data; that directory is replaced
         as a whole). The file is read when the run completes, and nothing is copied if
         the run fails or runs with --smoke. Returns the destination.
+
+        ``sources`` names the files the output was made from that another run wrote
+        (another experiment's ``result/tables/*.csv`` or ``data/processed/NNN_<slug>/``),
+        as for the helpers: hashed now and recorded in the sidecar, so ``make check`` W14
+        and ``--list-generators`` follow the output back to that experiment. Only a
+        ``result/tables/`` file has a sidecar to hold them.
         """
         _check_template(self.name, self.smoke)
         source = self._inside(name)
         assert source.is_file(), (
             f"{self._rel(source)} does not exist: write it through run.out() first"
         )
+        entries = _source_entries(sources, self._repo_root)
         dirs = _dirs(self._cfg)
         table_dir = dirs["tables"].resolve()
         mine = (dirs["processed"] / self.name).resolve()
@@ -692,7 +766,7 @@ class Run:
             staged = self.out_dir / STAGED / "tables" / f"{artifact}{SIDECAR_SUFFIX}"
             assert artifact not in self._tables and not staged.exists(), _twice(artifact)
             self._warn_large(source, base)
-            self._tables[artifact] = (source, base)
+            self._tables[artifact] = (source, base, entries)
             return table_dir / base
         assert dest == mine or dest.is_relative_to(mine), (
             f"{self._rel(dest)}: run.promote() writes to result/tables/ (the default) or "
@@ -700,6 +774,11 @@ class Run:
             "or figures.import_figure"
         )
         relative = (dest / base).relative_to(mine).as_posix()
+        assert not entries, (
+            f"{self._rel(dest / base)}: sources= is recorded in the sidecar of a result/tables/ "
+            "file; data/processed/ has no sidecar, so pass sources= to what this run "
+            "publishes in result/ (run.promote() into result/tables/, the helpers)"
+        )
         assert relative not in self._processed, _twice(self._rel(dest / base))
         self._processed[relative] = source
         return dest / base
@@ -725,7 +804,7 @@ class Run:
     def _materialise(self, staged: Path) -> None:
         """Copy the run.promote() files into out/staged/ (P1), checked against git now."""
         tables = staged / "tables"
-        for artifact, (source, base) in sorted(self._tables.items()):
+        for artifact, (source, base, sources) in sorted(self._tables.items()):
             sidecar_path = tables / f"{artifact}{SIDECAR_SUFFIX}"
             assert not sidecar_path.exists(), _twice(artifact)
             tables.mkdir(parents=True, exist_ok=True)
@@ -741,6 +820,7 @@ class Run:
                 **artifact_git_state(self._cfg),
                 "run": {key: self.record[key] for key in ("started", "seed", "params_sha256")},
                 "files": {base: _sha256(tables / base)},
+                **({"sources": sources} if sources else {}),
             }
             text = json.dumps(sidecar, indent=2, ensure_ascii=False) + "\n"
             sidecar_path.write_text(text, encoding="utf-8")
@@ -843,7 +923,8 @@ class Run:
         """P5-P8: parts, journal, swap, commit; on any exception, roll back and re-raise.
 
         The caller holds the publication lock. Until the journal is unlinked (the commit
-        point), a kill is rolled back by the next full run in the study.
+        point), a kill is rolled back by the next full run in the study. From the swap
+        on, a stop signal waits until the run is recorded (``_hold``).
         """
         pid = os.getpid()
         journal_path = Path(self._cfg.STUDY_ROOT) / "result" / JOURNAL
@@ -891,6 +972,7 @@ class Run:
             }
             journal_part.write_text(json.dumps(journal, indent=2) + "\n", encoding="utf-8")
             os.replace(journal_part, journal_path)
+            self._hold()  # from here a stop waits until the run is recorded
             # P7: the swap.
             for path, backup in moves:
                 os.replace(path, backup)
@@ -918,6 +1000,41 @@ class Run:
                 backup.unlink(missing_ok=True)
         if processed is not None and processed[1] is not None:
             _remove(processed[1])
+
+    def _hold(self) -> None:
+        """Make SIGINT, SIGTERM and SIGHUP wait from the swap until the run is recorded.
+
+        A stop after the commit point would record a failed run whose files are already
+        published. The handlers are replaced rather than the signals blocked, because a
+        signal that another thread (a BLAS pool) receives still runs the main thread's
+        handler. ``_release`` lets a signal that arrived meanwhile act.
+        """
+        if self._held is not None or threading.current_thread() is not threading.main_thread():
+            return
+        handlers: dict = {}
+        pending: list[int] = []
+
+        def wait(signum, frame) -> None:
+            if not pending:
+                note = f"\n[{self.name}] publishing: the stop waits until the run is recorded\n"
+                with contextlib.suppress(OSError):
+                    os.write(2, note.encode())
+            pending.append(signum)
+
+        self._held = (handlers, pending)
+        for signum in _STOP_SIGNALS:
+            handlers[signum] = signal.signal(signum, wait)
+
+    def _release(self) -> None:
+        """Restore the handlers ``_hold`` replaced, then deliver what arrived meanwhile."""
+        if self._held is None:
+            return
+        handlers, pending = self._held
+        self._held = None
+        for signum, handler in handlers.items():
+            signal.signal(signum, signal.SIG_DFL if handler is None else handler)
+        for signum in dict.fromkeys(pending):
+            signal.raise_signal(signum)
 
 
 def _study_config(cfg, run_file):
@@ -1089,23 +1206,28 @@ def _run(args, argv, cfg, run_file: Path, exp_dir: Path, out_dir: Path, params) 
     else:
         record["status"] = "completed"
     finally:
-        for signum, handler in handlers.items():
-            signal.signal(signum, handler)
-        os.environ.pop(RUN_ENV, None)
-        _LIVE.pop(str(record_path), None)
-        record["staged"] = run._staged_listing()
-        end = git_state(repo_root, study_root, quiet=True)
-        if git["commit"] is None or end is None:
-            record["code_state"] = "unknown"
-        elif git["dirty"]:
-            record["code_state"] = "uncommitted"
-        elif _changed(repo_root, study_root, git, end):
-            record["code_state"] = "changed_during_run"
-        else:
-            record["code_state"] = "clean"
-        record["finished"], record["elapsed_s"] = _now(), round(run.elapsed(), 3)
-        _write(record_path, record)
-        print(f"[{name}] {record['status']} in {record['elapsed_s']:.1f} s", flush=True)
+        try:
+            os.environ.pop(RUN_ENV, None)
+            _LIVE.pop(str(record_path), None)
+            record["staged"] = run._staged_listing()
+            end = git_state(repo_root, study_root, quiet=True)
+            if git["commit"] is None or end is None:
+                record["code_state"] = "unknown"
+            elif git["dirty"]:
+                record["code_state"] = "uncommitted"
+            elif _changed(repo_root, study_root, git, end):
+                record["code_state"] = "changed_during_run"
+            else:
+                record["code_state"] = "clean"
+            record["finished"], record["elapsed_s"] = _now(), round(run.elapsed(), 3)
+            _write(record_path, record)
+            print(f"[{name}] {record['status']} in {record['elapsed_s']:.1f} s", flush=True)
+        finally:
+            try:
+                run._release()  # a stop that waited for the record acts now
+            finally:
+                for signum, handler in handlers.items():
+                    signal.signal(signum, handler)
 
 
 # run.py imports this file as src.utils.experiment; the helpers load it by path under

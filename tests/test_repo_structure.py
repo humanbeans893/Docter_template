@@ -5,8 +5,10 @@ checked: the handoff documents exist, the always-read ones stay within their cha
 budgets and their index rows stay short, every study's experiment directories match its
 index one to one, each experiment's card (summary.md) is short and says the status of its
 index row, the experiment procedure is the same in every study, both agents can load the
-skills and the mirrored ones agree, the docs use this repository's conventions instead of
-research-template's, and experiment outputs stay out of git.
+skills and the mirrored ones agree (write-handoff asks for an import's open steps only while
+it is open, thesis-check explains every finding code of tools/thesis_check.py), the docs use
+this repository's conventions instead of research-template's, and experiment outputs stay
+out of git.
 """
 
 import importlib.util
@@ -465,6 +467,45 @@ def test_card_checks_reject_disagreeing_long_and_unfinished_cards(fake_study: Pa
     assert any("must start with the word" in p for p in about("009_old_word"))
 
 
+def test_a_stopped_import_keeps_its_origin_but_not_its_open_steps(fake_study: Path) -> None:
+    # An abandoned import reads `中止 | — | 取り込み`; its card loses ## 残りの手順 like any
+    # closed import (the section stays only while the import is 進行中).
+    experiments = fake_study / "experiments"
+    card = "# {name}: 問い\n\n- **状態**: 中止\n\n## 答え\n\n取り込まなかった理由。\n"
+    steps = "\n## 残りの手順\n\n- [ ] 過去のファイルを利用者がコピーした\n"
+    rows = []
+    for name, text in {"001_dropped": card, "002_kept_steps": card + steps}.items():
+        (experiments / name).mkdir()
+        (experiments / name / CARD).write_text(text.format(name=name), encoding="utf-8")
+        number, slug = name.split("_", 1)
+        rows.append(f"| {number} | {slug} | x | 中止 | — | {OPEN_IMPORT} |")
+    index = experiments / "EXP_SUMMARY.md"
+    write_index(index, rows)
+
+    assert not index_problems(index), index_problems(index)
+    problems = card_problems(fake_study)
+    assert len(problems) == 1, problems
+    assert "/002_kept_steps/" in problems[0] and "残りの手順" in problems[0], problems
+
+
+def test_handoff_asks_for_open_steps_only_while_an_import_is_open() -> None:
+    # write-handoff once asked for 残りの手順 on every row whose 由来 is 取り込み, so an agent put
+    # the section back on a stopped import and card_problems failed (above). Every instruction
+    # of the skill about an import's 残りの手順 names the open status.
+    for directory in SKILL_DIRS:
+        path = directory / "write-handoff" / "SKILL.md"
+        body = path.read_text(encoding="utf-8")
+        # One numbered step or bullet with its indented continuation lines.
+        items = re.split(r"\n(?=(?:[0-9]+\.|-) )|\n\n", body)
+        about_steps = [item for item in items if "取り込み" in item and "残りの手順" in item]
+        assert about_steps, f"{rel(path)} no longer checks the open imports' 残りの手順"
+        unscoped = [item.strip() for item in about_steps if OPEN not in item]
+        assert not unscoped, (
+            f"{rel(path)}: limit these to imports whose status is {OPEN} (a 中止 card must not "
+            "keep ## 残りの手順):\n" + "\n".join(unscoped)
+        )
+
+
 def test_template_study_has_no_experiments() -> None:
     # make study copies projects/_template: experiments there would leak into every new study.
     template = ROOT / "projects" / "_template"
@@ -524,6 +565,29 @@ def test_mirrored_skills_are_identical_for_both_agents() -> None:
     assert not differing, (
         f"Keep .agents/skills/<name>/ byte-identical to .claude/skills/<name>/ for: {differing}"
     )
+
+
+FINDING_CODE = re.compile(r'"([EWI][0-9]+)"')
+SKILL_CODE_CELL = re.compile(r"^\|\s*([EWI][0-9]+(?:\s*/\s*[EWI][0-9]+)*)\s*\|", re.MULTILINE)
+
+
+def test_thesis_check_skill_explains_every_finding_code() -> None:
+    # The thesis-check skill tells the user how to fix each finding of make check. A code the
+    # checker gained without a row (E12 after a killed publication, I5 for an unused generated
+    # figure) leaves the agent guessing, and a stale row sends it after a check that is gone.
+    emitted = set(FINDING_CODE.findall((ROOT / "tools" / "thesis_check.py").read_text("utf-8")))
+    for directory in SKILL_DIRS:
+        path = directory / "thesis-check" / "SKILL.md"
+        explained = {
+            code.strip()
+            for cell in SKILL_CODE_CELL.findall(path.read_text(encoding="utf-8"))
+            for code in cell.split("/")
+        }
+        assert explained == emitted, (
+            f"{rel(path)}: the table of findings must have a row for every code "
+            f"tools/thesis_check.py reports; missing {sorted(emitted - explained)}, "
+            f"stale {sorted(explained - emitted)}"
+        )
 
 
 def convention_scanned_files() -> list[Path]:

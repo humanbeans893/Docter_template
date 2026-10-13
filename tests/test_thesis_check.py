@@ -653,6 +653,349 @@ def test_artifacts_from_uncommitted_code_are_w15(thesis_check, repo, state):
     assert [f.severity for f in of(final_findings, "W15")] == ["error"]
 
 
+def test_w15_follows_a_promoted_csv(thesis_check, repo):
+    """A clean scripts/ figure drawn from a CSV that a run with uncommitted code promoted."""
+    tables = repo / "projects" / "s1" / "result" / "tables"
+    csv = write(tables / "s1-fit.csv", "x,y\n1,2\n")
+    run_py = "projects/s1/experiments/001_good_run/run.py"
+    sidecar(csv, kind="file", experiment="001_good_run", script=run_py, git_dirty=True)
+    sidecar(
+        figure(repo, "s1-plot.png"),
+        script="projects/s1/scripts/plot.py",
+        sources=[{"path": "projects/s1/result/tables/s1-fit.csv", "sha256": sha256(csv)}],
+    )
+    draft_main(repo, "\\includegraphics{s1-plot}\n")
+
+    draft_findings = of(thesis_check.run_checks(repo / "draft", with_log=False), "W15")
+    final_findings = thesis_check.run_checks(repo / "draft", with_log=False, submission=True)
+
+    assert [f.severity for f in draft_findings] == ["warning"]
+    assert [f.severity for f in of(final_findings, "W15")] == ["error"]
+    assert draft_findings[0].location.endswith("projects/s1/result/figures/s1-plot.png")
+    message = draft_findings[0].message
+    assert message.startswith(
+        "s1-plot.png was generated from uncommitted code "
+        "(through its source projects/s1/result/tables/s1-fit.csv) -- commit the code, then "
+        f"re-run {run_py} --overwrite, then the scripts that read it"
+    ), message
+    # Once the experiment is re-run from a clean tree, the figure is clean again.
+    sidecar(csv, kind="file", experiment="001_good_run", script=run_py)
+    assert of(thesis_check.run_checks(repo / "draft", with_log=False), "W15") == []
+
+
+def test_w14_w15_and_generators_follow_an_experiment_that_read_a_promoted_csv(thesis_check, repo):
+    """Experiment 002 promoted s1-fit.csv; experiment 004 read it and promoted s1-derived.csv
+    with run.promote(..., sources=[...]); a scripts/ figure was drawn from that. Withdrawing
+    002 reaches the figure two hops up, and its regeneration starts at 002."""
+    tables = repo / "projects" / "s1" / "result" / "tables"
+    first = "projects/s1/experiments/002_bad_run/run.py"
+    second = "projects/s1/experiments/004_redo/run.py"
+    plot = "projects/s1/scripts/plot.py"
+    for script in (plot, second, first):
+        write(repo / script, "print()\n")
+    fit = write(tables / "s1-fit.csv", "x\n1\n")
+    sidecar(fit, kind="file", experiment="002_bad_run", script=first, git_dirty=True)
+    derived = write(tables / "s1-derived.csv", "x\n2\n")
+    sidecar(
+        derived,
+        kind="file",
+        experiment="004_redo",
+        script=second,
+        sources=[{"path": "projects/s1/result/tables/s1-fit.csv", "sha256": sha256(fit)}],
+    )
+    sidecar(
+        figure(repo, "s1-plot.png"),
+        script=plot,
+        sources=[{"path": "projects/s1/result/tables/s1-derived.csv", "sha256": sha256(derived)}],
+    )
+    draft_main(repo, "\\includegraphics{s1-plot}\n")
+
+    findings = thesis_check.run_checks(repo / "draft", with_log=False)
+    lines = thesis_check.list_generators(repo / "draft", ("main.tex",))
+
+    through = "(through its source projects/s1/result/tables/s1-fit.csv)"
+    w14, w15 = of(findings, "W14"), of(findings, "W15")
+    assert (
+        len(w14) == 1
+        and "comes from experiment 002_bad_run, whose status is '撤回" in w14[0].message
+    )
+    assert through in w14[0].message
+    assert len(w15) == 1 and through in w15[0].message
+    run = "docker compose exec research-template uv run python"
+    assert lines == [f"{run} {first} --overwrite", f"{run} {second} --overwrite", f"{run} {plot}"]
+
+
+def test_a_killed_publication_is_reported(thesis_check, repo, capsys):
+    """E12 while a killed publication's journal is left; W18 for its temporaries alone."""
+    s1 = repo / "projects" / "s1"
+    (s1 / "result" / "figures" / ".gitkeep").write_bytes(b"")
+    write(s1 / "data" / "processed" / "004_redo" / "grid.nc", "x")
+    draft_main(repo, "No figures.\n")
+    assert codes(thesis_check.run_checks(repo / "draft", with_log=False)) & {"E12", "W18"} == set()
+
+    # A publication of 004_redo killed in its swap: the journal and its temporaries remain.
+    journal = write(
+        s1 / "result" / ".publication.json",
+        json.dumps({"pid": 4242, "experiment": "004_redo", "entries": [], "processed": None}),
+    )
+    write(s1 / "result" / "tables" / ".s1-fit.csv.4242.previous", "old\n")
+    write(s1 / "result" / "figures" / ".s1-plot.png.4242.part", "new\n")
+    (s1 / "data" / "processed" / ".004_redo.4242.previous").mkdir()
+
+    findings = thesis_check.run_checks(repo / "draft", with_log=False)
+
+    e12 = of(findings, "E12")
+    assert [f.severity for f in e12] == ["error"] and of(findings, "W18") == []
+    assert e12[0].location.endswith("projects/s1/result/.publication.json")
+    message = e12[0].message
+    assert message.startswith("a publication of experiment 004_redo in s1 was killed midway")
+    assert "(3 temporary file(s) beside them)" in message
+    assert "projects/s1/experiments/004_redo/run.py --overwrite" in message
+    assert message.endswith("it rolls the publication back first")
+    assert "unreadable" not in message
+    assert thesis_check.main(["--no-log"], root=repo) == 1  # make check fails on it
+    capsys.readouterr()
+
+    # A journal the harness cannot read makes the next full run stop instead of rolling it
+    # back, so the advice is the manual repair (from git), not a run.
+    unreadable = (
+        "the journal is unreadable, so a full run will not roll it back: restore "
+        "projects/s1/result/ from git (git status shows what changed), rename a "
+        "data/processed/.<NNN_slug>.<pid>.previous directory back if there is one, then "
+        "delete the journal and the .part/.previous temporaries"
+    )
+    for text, who in [
+        ("{not json", "an experiment"),
+        ("[]", "an experiment"),
+        (json.dumps({"experiment": "004_redo", "entries": "x", "processed": None}), "004_redo"),
+        (json.dumps({"experiment": "004_redo", "entries": []}), "004_redo"),
+        (json.dumps({"entries": [{"target": "projects/s1/result/a"}], "processed": None}), ""),
+        (json.dumps({"entries": [], "processed": {"target": "a", "backup": None}}), ""),
+        (json.dumps({"entries": [{"target": None, "backup": None}], "processed": None}), ""),
+    ]:
+        write(journal, text)
+        message = of(thesis_check.run_checks(repo / "draft", with_log=False), "E12")[0].message
+        assert who in message, text
+        assert message.endswith(unreadable), text
+        assert "start any full run" not in message, text
+    # A readable journal with entries and a processed directory keeps the run advice.
+    write(
+        journal,
+        json.dumps(
+            {
+                "pid": 4242,
+                "experiment": "004_redo",
+                "entries": [
+                    {
+                        "target": "projects/s1/result/tables/s1-fit.csv",
+                        "backup": "projects/s1/result/tables/.s1-fit.csv.4242.previous",
+                    },
+                    {"target": "projects/s1/result/figures/s1-plot.png", "backup": None},
+                ],
+                "processed": {
+                    "target": "projects/s1/data/processed/004_redo",
+                    "backup": "projects/s1/data/processed/.004_redo.4242.previous",
+                    "source": "projects/s1/data/processed/.004_redo.4242.part",
+                },
+            }
+        ),
+    )
+    message = of(thesis_check.run_checks(repo / "draft", with_log=False), "E12")[0].message
+    assert message.endswith("it rolls the publication back first")
+    assert "unreadable" not in message
+
+    # Without the journal (a kill before it was written or after the commit point) result/
+    # is consistent: the temporaries alone are W18, an error for the submission.
+    journal.unlink()
+    write(s1 / "result" / ".publication.json.4242.part", "{")
+    write(s1 / "result" / "tables" / ".s1-notes.txt", "a hidden file, not a temporary\n")
+    draft_findings = thesis_check.run_checks(repo / "draft", with_log=False)
+    final_findings = thesis_check.run_checks(repo / "draft", with_log=False, submission=True)
+
+    assert of(draft_findings, "E12") == []
+    assert [f.severity for f in of(draft_findings, "W18")] == ["warning"]
+    assert [f.severity for f in of(final_findings, "W18")] == ["error"]
+    w18 = of(draft_findings, "W18")[0]
+    assert w18.location == "projects/s1"
+    assert w18.message.startswith("4 temporary file(s) of a killed publication left: ")
+    assert ".s1-notes.txt" not in w18.message
+
+
+def test_wrapper_macros_are_read_at_each_use(thesis_check, repo):
+    """A \\newcommand that hands its parameters to \\includegraphics, \\label, \\cref or \\cite
+    is checked where it is used, with its arguments filled in; its definition is not a use."""
+    for name in ("s1-good", "s1-left", "s1-right", "s1-map"):
+        sidecar(figure(repo, f"{name}.png"), experiment="001_good_run")
+    sidecar(figure(repo, "s1-withdrawn.png"), experiment="002_bad_run")
+    write(repo / "draft" / "reference.bib", "@book{known,\n  title = {T},\n}\n")
+    draft_main(
+        repo,
+        "\\studyfig{s1-good}{Good.} \\figref{s1-good}\n"
+        "\\studyfig[0.8]{s1-withdrawn}{A\n  wrapped \\emph{caption}.}\n"
+        "\\figref{s1-withdrawn} \\figref{s1-typo} \\mycite{known} \\mycite{unknown}\n"
+        "\\figpair{s1-left}{s1-right} \\cref{fig:s1-left,fig:s1-right}\n"
+        "\\sitemap{s1-map} \\cref{fig:s1-sites} \\oldref{s1-good} \\oldref{s1-left}\n"
+        "\\bibliography{reference}\n",
+        preamble="\\newcommand{\\studyfig}[3][0.6]{\\begin{figure}"
+        "\\includegraphics[width=#1\\linewidth]{#2}\\caption{#3}\\label{fig:#2}\\end{figure}}\n"
+        "\\newcommand{\\figref}[1]{Figure~\\cref{fig:#1}}\n"
+        "\\newcommand\\mycite[1]{\\citep{#1}}\n"
+        "\\newcommand*{\\figpair}[2]{\\studyfig{#1}{Left.}\n  \\studyfig{#2}{Right.}}\n"
+        "\\newcommand{\\sitemap}[1]{\\includegraphics{#1}\\label{fig:s1-sites}}\n"
+        "\\newcommand{\\oldref}[1]{Figure~\\ref{fig:#1}}\n"
+        "\\def\\deffig#1{\\includegraphics{#1}}\n",
+    )
+
+    findings = thesis_check.run_checks(repo / "draft", with_log=False)
+
+    def where(code):
+        return [f.location.rsplit("/", 1)[-1] for f in of(findings, code)]
+
+    assert [f.message for f in of(findings, "E1")] == ["reference to undefined label 'fig:s1-typo'"]
+    assert where("E1") == ["main.tex:15"]
+    assert ["'unknown'" in f.message for f in of(findings, "E3")] == [True]
+    assert codes(findings) & {"E2", "E4", "W3", "W4", "I5"} == set(), findings
+    assert where("W14") == ["s1-withdrawn.png"]
+    # A bare \ref in a wrapper is reported once, at its definition.
+    assert where("W7") == ["main.tex:9"]
+    # A macro the checker cannot expand is named, not read as a figure called '#1'.
+    assert where("I6") == ["main.tex:10"]
+    assert of(findings, "I6")[0].message.startswith("\\includegraphics{#1} sits in a macro")
+
+
+def test_unexpandable_macros_are_named_by_their_command(thesis_check, repo):
+    """I6 names the command as written in the macro (\\cref, \\nameref, \\citep, ...)."""
+    draft_main(
+        repo,
+        "No figures.\n",
+        preamble="\\def\\seefig#1{\\cref{fig:#1}}\n"
+        "\\def\\seename#1{\\nameref{sec:#1}}\n"
+        "\\def\\seerange#1#2{\\Crefrange*{fig:#1}{fig:#2}}\n"
+        "\\def\\mycite#1{\\citep[p.~1]{#1}}\n"
+        "\\def\\myval#1{\\valqty{#1}}\n",
+    )
+
+    findings = thesis_check.run_checks(repo / "draft", with_log=False)
+    messages = [f.message for f in of(findings, "I6")]
+
+    assert [message.split(" sits in a macro")[0] for message in messages] == [
+        "\\cref{fig:#1}",
+        "\\nameref{sec:#1}",
+        "\\Crefrange*{fig:#1}",
+        "\\citep{#1}",
+        "\\valqty{#1}",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "keys"),
+    [
+        ("\\cref{fig:a,fig:b}", ["fig:a,fig:b"]),
+        ("\\Cref*{fig:a}", ["fig:a"]),
+        ("\\eqref{eq:a} \\autoref*{sec:a}", ["eq:a", "sec:a"]),
+        ("\\cpageref{fig:a} \\Cpageref{fig:b}", ["fig:a", "fig:b"]),
+        ("\\labelcref{fig:a} \\labelcpageref{fig:b}", ["fig:a", "fig:b"]),
+        ("\\namecref{fig:a} \\nameCrefs{fig:b} \\lcnamecref{fig:c}", ["fig:a", "fig:b", "fig:c"]),
+        ("\\nameref{sec:a} \\Nameref{sec:b} \\subref*{fig:a}", ["sec:a", "sec:b", "fig:a"]),
+        (
+            "\\vref{fig:a} \\Vref{fig:b} \\vpageref[above][below]{fig:c}",
+            ["fig:a", "fig:b", "fig:c"],
+        ),
+        ("\\crefrange{fig:a}{fig:c}", ["fig:a", "fig:c"]),
+        (
+            "\\Crefrange*{fig:a} {fig:c} \\cpagerefrange{tab:a}{tab:b}",
+            ["fig:a", "fig:c", "tab:a", "tab:b"],
+        ),
+        ("\\crefname{figure}{Fig.}{Figs.} \\Crefname{table}{Table}{Tables}", []),
+        ("\\creflabelformat{equation}{#2(#1)#3} \\crefformat{x}{y}", []),
+    ],
+)
+def test_reference_commands_give_keys(thesis_check, source, keys):
+    found = [
+        (match.start(), key)
+        for regex in (thesis_check.RE_REF, thesis_check.RE_REF_RANGE)
+        for match in regex.finditer(source)
+        for key in match.groups()
+    ]
+    assert [key for _, key in sorted(found)] == keys
+
+
+def test_cleveref_ranges_page_and_name_references_are_references(thesis_check, tmp_path):
+    """Labels referred to only through \\crefrange, \\cpageref, \\labelcref or \\nameref are
+    referenced (no W4); an undefined key inside a range is E1."""
+    write(
+        tmp_path / "main.tex",
+        "\\documentclass{article}\n\\begin{document}\n"
+        + "".join(f"\\begin{{figure}}\\label{{fig:{n}}}\\end{{figure}}\n" for n in "abcefg")
+        + "\\begin{table}\\label{tab:d}\\end{table}\n"
+        "\\Crefrange{fig:a}{fig:b} on \\cpageref{fig:c}; \\labelcref{tab:d}, \\nameref{fig:e},\n"
+        "\\namecref{fig:f} \\cpagerefrange{fig:g}\n  {fig:a} \\crefrange{fig:ghost1}{fig:a}\n"
+        "\\end{document}\n",
+    )
+
+    findings = thesis_check.run_checks(tmp_path, with_log=False)
+
+    assert of(findings, "W4") == []
+    assert [(f.message, f.location.rsplit("/", 1)[-1]) for f in of(findings, "E1")] == [
+        ("reference to undefined label 'fig:ghost1'", "main.tex:12")
+    ]
+
+
+def test_unused_hand_made_figures_are_w3_and_generated_ones_are_listed(thesis_check, repo, capsys):
+    """W3 (fatal under --strict) is for figures placed by hand; generated figures the text
+    does not use -- an experiment's diagnostics, a withdrawn experiment's figure -- are I5."""
+    hand_made = repo / "draft" / "figures"
+    (hand_made / "sketch.pdf").write_bytes(b"%PDF")
+    write(hand_made / "README.md", "| ファイル |\n|---|\n| sketch.pdf |\n")
+    figure(repo, "s1-copied.png")  # put into result/figures/ by hand: no sidecar lists it
+    for name, experiment in [
+        ("s1-main.png", "001_good_run"),
+        ("s1-diag-b.png", "001_good_run"),
+        ("s1-diag-a.png", "001_good_run"),
+        ("s1-old.png", "002_bad_run"),
+        ("s1-lost.png", "011_ghost"),
+    ]:
+        run_py = f"projects/s1/experiments/{experiment}/run.py"
+        sidecar(figure(repo, name), experiment=experiment, script=run_py)
+    sidecar(figure(repo, "s1-styled.png"))  # a scripts/ figure (projects/s1/scripts/make.py)
+    write(
+        repo / "draft" / "thesis-config.tex",
+        "".join(f"\\newcommand{{\\{n}}}{{Set}}\n" for n in sorted(thesis_check.REQUIRED_METADATA)),
+    )
+    draft_main(repo, "\\includegraphics{s1-main}\n", preamble="\\input{thesis-config}\n")
+
+    findings = thesis_check.run_checks(repo / "draft", with_log=False)
+
+    assert sorted(f.location.rsplit("/", 1)[-1] for f in of(findings, "W3")) == [
+        "s1-copied.png",
+        "sketch.pdf",
+    ]
+    listed = sorted(f.message for f in of(findings, "I5"))
+    assert {f.location.rsplit("/", 1)[-1] for f in of(findings, "I5")} == {"figures"}
+    assert len(listed) == 4
+    assert listed[0].startswith(
+        "1 generated figure(s) that no checked document includes, from experiment 002_bad_run "
+        "(状態 撤回(2026-01-02、→ 004_redo)): s1-old.png -- nothing regenerates them"
+    )
+    assert listed[1].startswith(
+        "1 generated figure(s) that no checked document includes, from experiment 011_ghost "
+        "(no row in its index): s1-lost.png"
+    )
+    assert listed[2].startswith(
+        "1 generated figure(s) that no checked document includes, from projects/s1/scripts/"
+        "make.py: s1-styled.png"
+    )
+    assert listed[3].startswith(
+        "2 generated figure(s) that no checked document includes, from experiment 001_good_run "
+        "(状態 完了): s1-diag-a.png, s1-diag-b.png -- no action needed if they are diagnostics"
+    )
+    # A forgotten hand-made figure fails --strict (make check-final); generated ones do not.
+    assert thesis_check.main(["--strict", "--no-log"], root=repo) == 1
+    (hand_made / "sketch.pdf").unlink()
+    (repo / "projects" / "s1" / "result" / "figures" / "s1-copied.png").unlink()
+    assert thesis_check.main(["--strict", "--no-log"], root=repo) == 0, capsys.readouterr().out
+
+
 def test_result_files_without_study_prefix_are_w16(thesis_check, repo):
     sidecar(figure(repo, "overview.png"))
     write(repo / "projects" / "s1" / "result" / "tables" / "s1-ok.csv", "a\n1\n")
@@ -898,30 +1241,49 @@ def test_check_final_checks_both_final_documents_as_one(thesis_check, repo_root,
     assert mains == ["submission.tex", "supplementary.tex"]
     flags = [arg for arg in argv[2:] if arg != "--main" and arg not in mains]
     assert {"--submission", "--strict"} <= set(flags)
-    for name in ("s1-thesis-only.png", "s1-supplement-only.png"):
+    hand_made = repo / "draft" / "figures"
+    for name in ("thesis-only.png", "supplement-only.png"):
+        (hand_made / name).write_bytes(b"png")
+    write(
+        hand_made / "README.md",
+        "| ファイル |\n|---|\n| thesis-only.png |\n| supplement-only.png |\n| orphan.png |\n",
+    )
+    for name in ("s1-thesis-gen.png", "s1-supplement-gen.png"):
         sidecar(figure(repo, name))
     write(
         repo / "draft" / "thesis-config.tex",
         "".join(f"\\newcommand{{\\{n}}}{{Set}}\n" for n in sorted(thesis_check.REQUIRED_METADATA)),
     )
-    draft_main(repo, "\\includegraphics{s1-thesis-only}\n", preamble="\\input{thesis-config}\n")
+    draft_main(
+        repo,
+        "\\includegraphics{thesis-only}\n\\includegraphics{s1-thesis-gen}\n",
+        preamble="\\input{thesis-config}\n",
+    )
     write(repo / "draft" / "submission.tex", "\\def\\ThesisFinalBuild{1}\n\\input{main.tex}\n")
     supplement = (repo / "draft" / "main.tex").read_text(encoding="utf-8")
-    write(
-        repo / "draft" / "supplementary.tex",
-        supplement.replace("s1-thesis-only", "s1-supplement-only"),
-    )
+    for thesis_name in ("{thesis-only}", "{s1-thesis-gen}"):
+        supplement = supplement.replace(thesis_name, thesis_name.replace("thesis", "supplement"))
+    write(repo / "draft" / "supplementary.tex", supplement)
 
     assert thesis_check.main(argv[2:], root=repo) == 0, capsys.readouterr().out
-    assert "Checked: " in capsys.readouterr().out
-    # Checked one at a time (the old recipe), each document flags the other's figure.
+    out = capsys.readouterr().out
+    assert "Checked: " in out and "[I5]" not in out
+    # Checked one at a time (the old recipe), each document flags the other's figures.
     assert thesis_check.main(["--main", "supplementary.tex", *flags], root=repo) == 1
-    assert "s1-thesis-only.png: [W3]" in capsys.readouterr().out
-    # A figure neither document includes still fails the final check.
-    sidecar(figure(repo, "s1-orphan.png"))
+    out = capsys.readouterr().out
+    assert "thesis-only.png: [W3]" in out and "s1-thesis-gen.png" in out
+    # A hand-made figure neither document includes still fails the final check ...
+    (hand_made / "orphan.png").write_bytes(b"png")
     assert thesis_check.main(argv[2:], root=repo) == 1
     out = capsys.readouterr().out
-    assert "s1-orphan.png: [W3]" in out and "s1-thesis-only.png: [W3]" not in out
+    assert "orphan.png: [W3]" in out and "thesis-only.png: [W3]" not in out
+    # ... a generated one (an experiment's diagnostic panel) is listed, and does not.
+    (hand_made / "orphan.png").unlink()
+    sidecar(figure(repo, "s1-diagnostic.png"), experiment="001_good_run")
+    assert thesis_check.main(argv[2:], root=repo) == 0
+    out = capsys.readouterr().out
+    assert "[I5] 1 generated figure(s) that no checked document includes, from experiment " in out
+    assert "s1-diagnostic.png" in out and "s1-thesis-gen.png" not in out
 
 
 def test_list_generators_prints_sorted_unique_commands(thesis_check, repo):

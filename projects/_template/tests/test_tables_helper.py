@@ -213,9 +213,11 @@ def git(repo: Path, *args: str) -> str:
     return done.stdout
 
 
-def make_repo(root: Path, studies=("demo", "other")) -> Path:
+def make_repo(root: Path, studies=("demo", "other"), *, ignore_bytecode=True) -> Path:
     """A committed repository laid out like this one, with code and prose in every study."""
     files = {
+        # As in the real repository; loading the helpers by path writes bytecode beside them.
+        ".gitignore": "__pycache__/\n*.py[cod]\n" if ignore_bytecode else "",
         "config.py": "X = 1\n",
         "pyproject.toml": "[project]\n",
         "uv.lock": "version = 1\n",
@@ -330,6 +332,35 @@ def test_uncommitted_code_makes_an_artifact_dirty(tables_mod, tmp_path, edited):
     tables_mod.write_latex_values({"a": 1}, "demo-main", cfg_for(repo))
 
     assert recorded(cfg_for(repo), "demo-main") == (head(repo), True, True)
+
+
+@needs_git
+def test_bytecode_never_counts_as_code(tables_mod, tmp_path):
+    # As on a CI runner: no ignore rule and no PYTHONPYCACHEPREFIX keep bytecode out of
+    # git's sight, and Python writes it beside every module it loads.
+    repo = make_repo(tmp_path, ignore_bytecode=False)
+    study = repo / "projects" / "demo"
+    for name in (
+        "projects/demo/src/__pycache__/analysis.cpython-311.pyc",
+        "projects/demo/src/utils/__pycache__/experiment.cpython-311.pyc",
+        "projects/demo/scripts/__pycache__/promote.cpython-311.pyc",
+        "projects/demo/experiments/001_first/__pycache__/params.cpython-311.pyc",
+        "projects/demo/src/legacy.pyc",
+        "__pycache__/config.cpython-311.pyc",
+    ):
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_bytes(b"\x00bytecode")
+    experiment = tables_mod._experiment
+    assert experiment.git_state(repo, study)["dirty"] == []
+    tables_mod.write_latex_values({"a": 1}, "demo-main", cfg_for(repo))
+    assert recorded(cfg_for(repo), "demo-main") == (head(repo), False, False)
+
+    start = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "add", "-A", "projects/demo/src", "__pycache__")
+    git(repo, "commit", "-qm", "bytecode committed by mistake")
+    assert experiment.same_code(repo, study, start, "HEAD")
+    (study / "src" / "analysis.py").write_text("x = 2\n")  # code still counts
+    assert experiment.git_state(repo, study)["dirty"] == [" M projects/demo/src/analysis.py"]
 
 
 @needs_git

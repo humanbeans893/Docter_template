@@ -57,7 +57,7 @@ TITLE='Study 2: Title' make study NAME=study2
 NOCHAPTER=1 make study NAME=synthesis
 ```
 
-- 他のスタディの結果は、コミット済みの `result/tables/*.csv` をファイルとして読む。読んだファイルは、`save_figure`・`write_latex_table`・`write_latex_values` の `sources=[...]` に渡して、パスと sha256 を来歴に記録する。`make check` はそこから、その CSV を作った実験をたどり、撤回・中止・置き換えの実験や、まだ `進行中` の実験の結果なら知らせる(W14)。他のスタディのコードは import しない。
+- 他のスタディの結果は、コミット済みの `result/tables/*.csv` をファイルとして読む。読んだファイルは、`save_figure`・`write_latex_table`・`write_latex_values`・`run.promote()`(`result/tables/` へ出すとき)の `sources=[...]` に渡して、パスと sha256 を来歴に記録する。`make check` はそこから、その CSV を作った実験をたどり、撤回・中止・置き換えの実験や、まだ `進行中` の実験の結果なら知らせる(W14)。他のスタディのコードは import しない。
 - 複数のスタディで使う raw データは、1つのスタディ(持ち主)にだけ置き、他のスタディの台帳には持ち主のパスとチェックサムを書く。
 
 ## 実験を作る

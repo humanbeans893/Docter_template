@@ -68,7 +68,7 @@ import_figure(path, "study1-old-map", cfg, note="原データが失われた", l
 - **名前は必ず `study1-<内容>`**。論文側(`draft/`)は全スタディの図を1つの `\graphicspath` 名前空間で探すため、接頭辞がないと衝突する。
 - 実験の `run.py`(`experiment.start()` の中)で呼ぶと、生成物は `out/staged/` に置かれ、本実行が最後まで通ったときだけ `result/` に入る(`--smoke` や失敗した実行では `result/` は変わらない)。表にしないファイルは `run.promote()` で出す(`experiments/README.md` の「論文へ出すもの」)。`scripts/` のスクリプトから呼ぶと、すぐに `result/` に書く。
 - どの関数も `<名前>.provenance.json` を横に書く(生成したスクリプト・実験番号・作った日時とコミット・ファイルの sha256・再現性・`sources` に渡した読んだファイル。実験の中では実行の開始時刻・シード・パラメータのハッシュも)。`make check` がこれを読む。
-- `scripts/` のスクリプトで昇格するときは、読んだ CSV など(`result/tables/*.csv` や `data/processed/NNN_<slug>/` の中のファイル)を `sources=[...]` で渡して記録する(例: `save_figure(fig, "study1-fit", cfg, sources=[csv_path])`。`write_latex_table`・`write_latex_values` も同じ)。`make check` はそこから元の実験をたどり、撤回・中止・置き換え・進行中の実験の結果なら知らせる(W14)。
+- `scripts/` のスクリプトで昇格するときは、読んだ CSV など(`result/tables/*.csv` や `data/processed/NNN_<slug>/` の中のファイル)を `sources=[...]` で渡して記録する(例: `save_figure(fig, "study1-fit", cfg, sources=[csv_path])`。`write_latex_table`・`write_latex_values` も同じ)。実験の `run.py` が他の実験の CSV を読むときも同じで、`run.promote()` にも渡す(例: `run.promote("study1-derived.csv", sources=[csv_path])`)。`make check` はそこから元の実験をたどり、撤回・中止・置き換え・進行中の実験の結果なら知らせる(W14)。`--list-generators` も同じ記録から作り直しの順(上流が先)を決める。
 - 図の解像度・形式・フォントは、リポジトリのルートの `config.py` の `VISUALIZATION` から読む(論文全体で図の見た目をそろえるための設定で、数値は変えない)。
 - 数値ファイル(`write_latex_values` の出力)は `draft/values.tex` に `\ThesisValues{../projects/study1/result/tables/study1-main}` の形で一度登録し、本文では `\val{study1-main-rmse}` と書く。結果の数値を本文に手で打たない。
 - 表は章から `\input{../projects/study1/result/tables/study1-summary}` で読み込む。

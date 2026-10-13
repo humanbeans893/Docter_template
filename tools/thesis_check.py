@@ -9,7 +9,11 @@ The scan follows the ``\\input``/``\\include``/``\\ThesisValues`` graph reachabl
 the root file, in the order TeX reads it (comment-stripped, so disabled
 ``% \\include{...}`` lines are ignored). Citations, references, figures, value uses and
 the thesis metadata may be wrapped over several lines (``\\citep{a,`` / ``  b}``);
-\\label, \\graphicspath and the other commands are matched on one line.
+\\label, \\graphicspath and the other commands are matched on one line. A macro defined
+with \\newcommand (\\renewcommand, \\providecommand, \\DeclareRobustCommand) that hands
+its parameters to \\includegraphics, \\label, \\ref/\\cref, \\cite or \\val
+(``\\newcommand{\\studyfig}[2]{...\\includegraphics{#1}...\\label{fig:#1}}``) is read
+where it is used, with the arguments filled in; its definition is not a use.
 
 Usage:
   python3 tools/thesis_check.py                 # draft/main.tex + draft/build/main/main.log
@@ -27,7 +31,7 @@ Severities:
   info    TODO inventory, compile-log findings, R3 artifacts, unverified bib entries
 
 Checks:
-  E1 \\ref/\\cref/... target has no matching \\label
+  E1 \\ref/\\cref/\\crefrange/\\cpageref/\\labelcref/\\nameref/... target has no matching \\label
   E2 duplicate \\label keys
   E3 \\cite key missing from the bibliography (.bib), or the document has no \\bibliography
   E4 \\includegraphics file not found in draft/ or any \\graphicspath directory
@@ -40,9 +44,15 @@ Checks:
   E10 figure, \\input or \\ThesisValues target under projects/*/experiments/ or
       projects/*/data/
   E11 value defined only after \\begin{document} (register its file in draft/values.tex)
+  E12 a publication killed midway: projects/<study>/result/.publication.json is left, so
+      result/ and data/processed/ may mix old and new artifacts (the next full run of an
+      experiment in that study rolls it back; an unreadable journal is repaired by hand,
+      from git)
   W1 duplicate bibliography keys
   W2 bibliography entries never cited
-  W3 figure files in \\graphicspath directories never included
+  W3 hand-made figure file never included: one in draft/figures/ (or another \\graphicspath
+     directory outside the studies' result/figures/), or a file in result/figures/ that no
+     sidecar lists; an unused generated figure is I5 instead
   W4 fig:/tab: labels never referenced
   W5 labels not following the prefix convention (ch:/sec:/subsec:/fig:/tab:/eq:/alg:/app:)
   W6 identical figure basenames in multiple \\graphicspath directories (shadowing)
@@ -61,13 +71,22 @@ Checks:
       experiment, the `sources` it records are followed: a generated file with its own
       sidecar (a result/tables/*.csv a promotion script read, and so on) and a file under
       projects/<study>/data/processed/NNN_<slug>/ or experiments/NNN_<slug>/
-  W15 artifact generated from uncommitted or unknown code (error with --submission)
+  W15 artifact generated from uncommitted or unknown code (error with --submission); the
+      generated files in its `sources` are followed as for W14 (a scripts/ figure drawn
+      from a CSV that a run with uncommitted code promoted)
   W16 file in projects/<study>/result/{figures,tables}/ not named <study>-...
   W17 values file registered with \\ThesisValues not generated yet (error with --submission)
+  W18 temporaries of a killed publication (.<name>.<pid>.part/.previous) left in a
+      study's result/ or data/processed/ (error with --submission)
   I1 TODO/FIXME inventory (\\todo{...} and %-comments)
   I2 findings from draft/build/<job>/<job>.log (errors, undefined references/citations)
   I3 artifacts included as-is or transcribed (reproducibility R3)
   I4 bibliography entries without a valid `verified` field (error with --submission)
+  I5 generated figures in a study's result/figures/ that no checked document includes,
+     per experiment or script (an experiment's diagnostics, a withdrawn experiment's figure)
+  I6 \\includegraphics, \\label, \\ref, \\cite or \\val with a macro parameter (#1) in a
+     macro the checker cannot expand (\\def, \\NewDocumentCommand, ...): what it places is
+     not checked
 """
 
 import argparse
@@ -168,7 +187,17 @@ PLACEHOLDER_VALUES = {
 RE_INCLUDE_EDGE = re.compile(r"\\(input|include|ThesisValues)\s*\{([^{}]+)\}")
 RE_BEGIN_DOCUMENT = re.compile(r"\\begin\s*\{document\}")
 RE_LABEL = re.compile(r"\\label\{([^}]+)\}")
-RE_REF = re.compile(r"\\(?:ref|eqref|pageref|autoref|vref|[cC]ref)\*?\{([^}]+)\}")
+# The commands that refer to labels, one key or a comma list (LaTeX, amsmath, hyperref,
+# cleveref, varioref, subcaption) ...
+RE_REF = re.compile(
+    r"\\(?:ref|eqref|pageref|autoref|[nN]ameref|subref|[cC]ref|[cC]pageref|labelc(?:page)?ref"
+    r"|(?:lc)?name[cC]refs?|[vV]ref|vpageref|fullref)\*?(?:\s*\[[^\]]*\]){0,2}\s*\{([^}]+)\}"
+)
+# ... and those that take the two ends of a range (\crefrange{fig:a}{fig:c}).
+RE_REF_RANGE = re.compile(
+    r"\\[cCvV](?:page)?refrange\*?(?:\s*\[[^\]]*\]){0,2}"
+    r"\s*\{([^}]+)\}\s*\{([^}]+)\}"
+)
 RE_BARE_REF = re.compile(r"\\ref\*?\{([^}]+)\}")
 # natbib's \citetext takes free text and \citestyle a style name: neither takes keys.
 RE_CITE = re.compile(
@@ -187,6 +216,19 @@ RE_PLACEHOLDER_MARK = re.compile(r"%\s*thesis:placeholder\s*")
 # Generated values (draft/values.tex). Keys with `#` are the macro definitions themselves.
 RE_VALUE_USE = re.compile(r"\\(?:val|valqty|rawval)\s*\{([^{}]+)\}")
 RE_VALUE_DEF = re.compile(r"\\(?:def|deftext)value\s*\{([^{}]+)\}")
+# A macro definition the checker can expand at each use: \newcommand{\name}[n][default]{body}
+# (or \newcommand\name..., \renewcommand, \providecommand, \DeclareRobustCommand, starred).
+RE_NEWCOMMAND = re.compile(
+    r"\\(?:(?:re|provide)?newcommand|DeclareRobustCommand)\*?\s*"
+    r"(?:\{\s*\\([A-Za-z@]+)\s*\}|\\([A-Za-z@]+))\s*(?:\[\s*([1-9])\s*\])?\s*"
+)
+RE_PARAMETER = re.compile(r"#([1-9])")
+# The command a match of one of the patterns above starts with (I6 names it as written).
+RE_COMMAND_NAME = re.compile(r"\\[A-Za-z@]+\*?")
+# Leftovers of a run's publication (projects/<study>/src/utils/experiment.py): its journal
+# in result/, and .<name>.<pid>.part / .<name>.<pid>.previous beside each destination.
+PUBLICATION_JOURNAL = ".publication.json"
+RE_PUBLICATION_TEMP = re.compile(r"^\.(?P<name>.+)\.(?P<pid>\d+)\.(?:part|previous)$")
 
 RE_BIB_ENTRY = re.compile(r"^\s*@(\w+)\s*\{\s*([^,\s{}]+)\s*,")
 RE_VERIFIED = re.compile(r"^\d{4}-\d{2}-\d{2}\s*,\s*(?:doi|isbn|url):\S+$")
@@ -372,6 +414,8 @@ class TexIndex:
         self.value_uses: list[tuple[str, Path, int]] = []
         # key -> [(file, lineno, defined after \begin{document})]
         self.value_defs: dict[str, list[tuple[Path, int, bool]]] = {}
+        # (command, key with #n, file, lineno) in a macro the checker cannot expand
+        self.macro_params: list[tuple[str, str, Path, int]] = []
 
     @staticmethod
     def _add(index: dict, key: str, where: tuple) -> None:
@@ -391,8 +435,215 @@ def line_at(starts: list[int], offset: int) -> int:
     return bisect.bisect_right(starts, offset)
 
 
+# The commands whose arguments the checker reads: a macro that hands one of its parameters
+# to them is a wrapper, read at each use.
+READ_COMMANDS = (RE_REF, RE_REF_RANGE, RE_CITE, RE_GRAPHICS, RE_LABEL, RE_VALUE_USE)
+
+
+@dataclass
+class Wrapper:
+    """A \\newcommand whose body hands a parameter (#1..#9) to a command the checker reads."""
+
+    nargs: int
+    default: str | None  # the default of an optional first argument, if it has one
+    body: str
+
+
+def _skip_space(text: str, i: int) -> int:
+    while i < len(text) and text[i].isspace():
+        i += 1
+    return i
+
+
+def _in_spans(offset: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start <= offset < end for start, end in spans)
+
+
+def find_definitions(text: str) -> list[tuple[str, Wrapper, int, int]]:
+    """``(name, macro, start, end)`` of every \\newcommand with parameters in ``text``.
+
+    A command the checker already reads by its name (a redefined \\cref, \\val, ...) is
+    left out: it is read where it is used anyway.
+    """
+    found = []
+    for match in RE_NEWCOMMAND.finditer(text):
+        name = match.group(1) or match.group(2)
+        nargs = int(match.group(3) or 0)
+        i, default = match.end(), None
+        if nargs and text.startswith("[", i):
+            end = _skip_group(text, i, "[", "]")
+            default, i = text[i + 1 : end - 1], _skip_space(text, end)
+        if not nargs or not text.startswith("{", i):
+            continue
+        end = _skip_group(text, i, "{", "}")
+        if not any(regex.match(f"\\{name}{{x}}{{x}}") for regex in READ_COMMANDS):
+            found.append((name, Wrapper(nargs, default, text[i + 1 : end - 1]), match.start(), end))
+    return found
+
+
+def wrapper_names(definitions: dict[str, Wrapper]) -> set[str]:
+    """The macros that hand a parameter to a command the checker reads, directly or through
+    another such macro (\\newcommand{\\figpair}[2]{\\studyfig{#1}{}\\studyfig{#2}{}})."""
+    names = {
+        name
+        for name, macro in definitions.items()
+        if any(
+            "#" in key
+            for regex in READ_COMMANDS
+            for match in regex.finditer(macro.body)
+            for key in match.groups()
+            if key
+        )
+    }
+    while True:
+        calls = re.compile(rf"\\(?:{'|'.join(map(re.escape, names))})(?![A-Za-z@])")
+        more = {
+            name
+            for name, macro in definitions.items()
+            if name not in names and names and calls.search(macro.body)
+        }
+        if not more:
+            return names
+        names |= more
+
+
+def _group_end(text: str, i: int, opening: str, closing: str) -> int | None:
+    """End of the balanced group at ``text[i]``, or None when it is not closed."""
+    end = _skip_group(text, i, opening, closing)
+    return end if text[end - 1 : end] == closing else None
+
+
+def macro_arguments(text: str, i: int, wrapper: Wrapper) -> list[str] | None:
+    """The arguments of a wrapper used just before ``text[i]``, or None if they are cut off."""
+    args: list[str] = []
+    if wrapper.default is not None:
+        j = _skip_space(text, i)
+        if text.startswith("[", j):
+            end = _group_end(text, j, "[", "]")
+            if end is None:
+                return None
+            args.append(text[j + 1 : end - 1])
+            i = end
+        else:
+            args.append(wrapper.default)
+    while len(args) < wrapper.nargs:
+        j = _skip_space(text, i)
+        if j >= len(text) or text[j] in "}]":
+            return None
+        if text[j] == "{":
+            end = _group_end(text, j, "{", "}")
+            if end is None:
+                return None
+            args.append(text[j + 1 : end - 1])
+            i = end
+        else:  # a single token: \macro or one character
+            token = re.match(r"\\(?:[A-Za-z@]+|.)|.", text[j:], flags=re.DOTALL)
+            args.append(token.group(0))
+            i = j + len(token.group(0))
+    return args
+
+
+def expand_wrappers(
+    text: str, wrappers: dict[str, Wrapper], spans: list[tuple[int, int]], depth: int = 0
+) -> list[tuple[int, str]]:
+    """``(offset of the use, body with its arguments filled in)`` for each wrapper use.
+
+    Uses inside ``spans`` (the definitions) are skipped; a wrapper used in another's body
+    is expanded too (a few levels deep), at the offset of the outer use.
+    """
+    if not wrappers or depth > 4:
+        return []
+    names = "|".join(re.escape(name) for name in sorted(wrappers, key=len, reverse=True))
+    uses: list[tuple[int, str]] = []
+    for match in re.finditer(rf"\\({names})(?![A-Za-z@])", text):
+        if _in_spans(match.start(), spans):
+            continue
+        wrapper = wrappers[match.group(1)]
+        args = macro_arguments(text, match.end(), wrapper)
+        if args is None:
+            continue
+        body = fill_parameters(wrapper.body, args)
+        uses.append((match.start(), body))
+        for _, inner in expand_wrappers(body, wrappers, [], depth + 1):
+            uses.append((match.start(), inner))
+    return uses
+
+
+def fill_parameters(body: str, args: list[str]) -> str:
+    """``body`` with #1..#n replaced by ``args`` (in one pass: an argument may contain #)."""
+
+    def argument(parameter: re.Match) -> str:
+        k = int(parameter.group(1))
+        return args[k - 1] if k <= len(args) else parameter.group(0)
+
+    return RE_PARAMETER.sub(argument, body)
+
+
+def scan_uses(
+    index: TexIndex,
+    text: str,
+    path: Path,
+    starts: list[int],
+    spans: list[tuple[int, int]],
+    *,
+    at: int | None = None,
+) -> None:
+    """References, citations, figures and value uses in ``text`` (a comment-stripped file).
+
+    ``spans`` are the wrapper definitions in it: not uses (only a bare \\ref there is
+    reported, once). With ``at``, ``text`` is a wrapper's body expanded at that offset of
+    the file: its \\label keys are read too, and everything is reported at the use's line.
+    A key with a macro parameter (#1) outside a wrapper definition is I6.
+    """
+
+    def line(match: re.Match) -> int:
+        return line_at(starts, match.start() if at is None else at)
+
+    def usable(match: re.Match, key: str) -> bool:
+        if at is None and _in_spans(match.start(), spans):
+            return False
+        if "#" in key:
+            if at is None:  # named as written: \cref, \nameref, \citep, \valqty, ...
+                command = RE_COMMAND_NAME.match(match.group(0))
+                index.macro_params.append((command.group(0), key, path, line(match)))
+            return False
+        return True
+
+    for match in RE_REF.finditer(text):
+        for key in match.group(1).split(","):
+            if usable(match, key.strip()):
+                index._add(index.refs, key.strip(), (path, line(match)))
+    for match in RE_REF_RANGE.finditer(text):
+        for key in match.groups():
+            if usable(match, key.strip()):
+                index._add(index.refs, key.strip(), (path, line(match)))
+    if at is None:  # a wrapper's bare \ref is reported once, at its definition
+        for match in RE_BARE_REF.finditer(text):
+            index.bare_refs.append((match.group(1).strip(), path, line(match)))
+    for match in RE_CITE.finditer(text):
+        for key in match.group(1).split(","):
+            key = key.strip()
+            if key and key != "*" and usable(match, key):
+                index._add(index.cites, key, (path, line(match)))
+    for match in RE_GRAPHICS.finditer(text):
+        target = match.group(1).strip()
+        if usable(match, target):
+            index.graphics.append((target, path, line(match)))
+    for match in RE_VALUE_USE.finditer(text):
+        key = match.group(1).strip()
+        if usable(match, key):
+            index.value_uses.append((key, path, line(match)))
+    if at is not None:
+        for match in RE_LABEL.finditer(text):
+            key = match.group(1).strip()
+            if usable(match, key):
+                index._add(index.labels, key, (path, line(match)))
+
+
 def scan_tex(graph: Graph) -> TexIndex:
     index = TexIndex()
+    files = []
+    definitions: dict[str, Wrapper] = {}
     for path in graph.files:
         raws = read_lines(path)
         lines = [strip_comments(raw) for raw in raws]
@@ -400,29 +651,27 @@ def scan_tex(graph: Graph) -> TexIndex:
         # next lines, so these are matched on the whole comment-stripped file and reported
         # at the line where the command starts.
         text, starts = joined_text(lines)
-        for match in RE_REF.finditer(text):
-            where = (path, line_at(starts, match.start()))
-            for key in match.group(1).split(","):
-                index._add(index.refs, key.strip(), where)
-        for match in RE_BARE_REF.finditer(text):
-            index.bare_refs.append((match.group(1).strip(), path, line_at(starts, match.start())))
-        for match in RE_CITE.finditer(text):
-            where = (path, line_at(starts, match.start()))
-            for key in match.group(1).split(","):
-                key = key.strip()
-                if key and key != "*":
-                    index._add(index.cites, key, where)
-        for match in RE_GRAPHICS.finditer(text):
-            target = match.group(1).strip()
-            index.graphics.append((target, path, line_at(starts, match.start())))
-        for match in RE_VALUE_USE.finditer(text):
-            key = match.group(1).strip()
-            if "#" not in key:
-                index.value_uses.append((key, path, line_at(starts, match.start())))
+        found = find_definitions(text)
+        for name, macro, _, _ in found:
+            definitions[name] = macro  # a later \renewcommand wins, as in TeX
+        files.append((path, raws, lines, text, starts, found))
+    names = wrapper_names(definitions)
+    wrappers = {name: definitions[name] for name in names}
+    for path, raws, lines, text, starts, found in files:
+        spans = [(start, end) for name, _, start, end in found if name in names]
+        scan_uses(index, text, path, starts, spans)
+        for offset, body in expand_wrappers(text, wrappers, spans):
+            scan_uses(index, body, path, starts, [], at=offset)
         for lineno, (raw, line) in enumerate(zip(raws, lines, strict=True), 1):
             where = (path, lineno)
             for match in RE_LABEL.finditer(line):
-                index._add(index.labels, match.group(1).strip(), where)
+                key = match.group(1).strip()
+                if _in_spans(starts[lineno - 1] + match.start(), spans):
+                    continue  # read at each use of the wrapper
+                if "#" in key:
+                    index.macro_params.append(("\\label", key, path, lineno))
+                    continue
+                index._add(index.labels, key, where)
             for match in RE_BIBLIOGRAPHY.finditer(line):
                 index.bib_names.extend(name.strip() for name in match.group(1).split(","))
             for match in RE_GRAPHICSPATH.finditer(line):
@@ -586,6 +835,22 @@ def check_references(index: TexIndex, findings: list[Finding]) -> None:
                 f"bare \\ref{{{key}}} used; use \\cref instead",
             )
         )
+    reported: set[tuple[Path, int]] = set()
+    for command, key, path, lineno in index.macro_params:
+        if (path, lineno) in reported:
+            continue
+        reported.add((path, lineno))
+        findings.append(
+            Finding(
+                "info",
+                "I6",
+                f"{rel(path)}:{lineno}",
+                f"{command}{{{key}}} sits in a macro make check cannot expand (only "
+                "\\newcommand macros are read at each use), so what the macro places is not "
+                "checked (figures get no provenance checks) -- define it with \\newcommand, or "
+                "write the command out in the text",
+            )
+        )
 
 
 def check_metadata(files: list[Path], findings: list[Finding], *, submission: bool) -> None:
@@ -677,10 +942,38 @@ class UsedFigure:
     lineno: int
 
 
+def read_sidecar(artifact: Path) -> dict | None:
+    """The provenance sidecar beside ``artifact`` as a dict, or None (missing, unreadable)."""
+    try:
+        data = json.loads(
+            (artifact.parent / f"{artifact.stem}.provenance.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def generated_figure(figure: Path, root: Path) -> bool:
+    """A figure in a study's result/figures/ that its sidecar lists (a study helper made it)."""
+    parts = project_parts(figure, root)
+    if len(parts) != 4 or parts[1:3] != ("result", "figures"):
+        return False
+    files = (read_sidecar(figure) or {}).get("files")
+    return isinstance(files, dict) and figure.name in files
+
+
 def check_figures(
-    index: TexIndex, draft_dir: Path, dirs: list[Path], findings: list[Finding]
-) -> tuple[list[UsedFigure], set[str]]:
-    """E4/W3/W6. Returns the resolved figures and the stems the text refers to."""
+    index: TexIndex, draft_dir: Path, dirs: list[Path], findings: list[Finding], root: Path
+) -> tuple[list[UsedFigure], set[str], list[Path]]:
+    """E4/W3/W6. Returns the resolved figures, the stems the text refers to and the generated
+    figures it does not include (I5, reported once every checked document is known).
+
+    W3 is only for a figure someone placed by hand (draft/figures/, or a result/figures/
+    file no sidecar lists): include it or delete it. A generated figure the text does not
+    use -- a completed experiment's diagnostic panel, which its run.py publishes again on
+    every rerun, or the figure of a withdrawn or replaced experiment, kept for the record --
+    is listed (I5) instead of failing --strict.
+    """
     search_dirs = [draft_dir, *(d for d in dirs if d != draft_dir)]
     used: list[UsedFigure] = []
     used_stems: set[str] = set()
@@ -702,6 +995,7 @@ def check_figures(
         used.append(UsedFigure(target, resolved, path, lineno))
 
     stem_locations: dict[str, list[Path]] = {}
+    unused_generated: list[Path] = []
     for directory in dirs:
         if directory == draft_dir or not directory.is_dir():
             continue
@@ -709,13 +1003,18 @@ def check_figures(
             if not figure.is_file() or figure.suffix.lower() not in GRAPHICS_EXTENSIONS:
                 continue
             stem_locations.setdefault(figure.stem, []).append(figure)
-            if figure.stem not in used_stems and figure.name not in used_stems:
+            if figure.stem in used_stems or figure.name in used_stems:
+                continue
+            if generated_figure(figure, root):
+                unused_generated.append(figure.resolve())
+            else:
                 findings.append(
                     Finding(
                         "warning",
                         "W3",
                         rel(figure),
-                        "figure file is never \\includegraphics'd",
+                        "figure file is never \\includegraphics'd -- include it, or delete it "
+                        "if nothing needs it (no study helper made it)",
                         subject=figure.stem,
                     )
                 )
@@ -731,7 +1030,7 @@ def check_figures(
                     f"figure basename '{stem}' exists in multiple directories",
                 )
             )
-    return used, used_stems
+    return used, used_stems, unused_generated
 
 
 def read_ledger(readme: Path) -> set[str]:
@@ -1005,6 +1304,13 @@ def experiment_origins(
     return unique
 
 
+def rerun_hint(script: object) -> str:
+    """``script`` as it is re-run (an experiment's run.py replaces a completed run only with
+    --overwrite)."""
+    text = str(script)
+    return f"{text} --overwrite" if RE_EXPERIMENT_SCRIPT.fullmatch(text) else text
+
+
 def check_provenance(
     artifacts: list[Artifact], root: Path, findings: list[Finding], *, submission: bool
 ) -> None:
@@ -1068,16 +1374,31 @@ def check_provenance(
                     )
                 )
 
-        dirty, commit = sidecar.get("git_dirty"), sidecar.get("git_commit")
-        if dirty is True or dirty == "unknown" or commit in (None, "", "unknown"):
+        # The artifact's own code, then that of every generated file it was made from (the
+        # same `sources` traversal as W14): a scripts/ figure drawn from a CSV that a run
+        # with uncommitted code promoted carries that run's numbers.
+        upstreams = [(via, up) for via, up, _ in follow_sources(sidecar, root) if up is not None]
+        for via, record in [(None, sidecar), *upstreams]:
+            dirty, commit = record.get("git_dirty"), record.get("git_commit")
+            if not (dirty is True or dirty == "unknown" or commit in (None, "", "unknown")):
+                continue
             reason = "uncommitted code" if dirty is True else "code at an unknown commit"
+            if via is None:
+                detail, rerun = "", rerun_hint(script)
+            else:
+                detail = f" (through its source {via})"
+                writer = record.get("script") or f"the script that wrote {via}"
+                rerun = (
+                    f"{rerun_hint(writer)}, then the scripts that read it (in the order "
+                    "python3 tools/thesis_check.py --list-generators prints)"
+                )
             findings.append(
                 Finding(
                     strict,
                     "W15",
                     location,
-                    f"{name} was generated from {reason} -- commit the code, then re-run "
-                    f"{script} from a clean tree",
+                    f"{name} was generated from {reason}{detail} -- commit the code, then "
+                    f"re-run {rerun} from a clean tree",
                 )
             )
 
@@ -1176,6 +1497,166 @@ def check_result_names(root: Path, findings: list[Finding]) -> None:
                             "artifacts <study>-<what> (all studies share one namespace)",
                         )
                     )
+
+
+def unused_figure_findings(figures: list[Path], root: Path) -> list[Finding]:
+    """I5: generated figures no checked document includes, one line per generator.
+
+    Not a warning: a completed experiment publishes its diagnostics again on every rerun
+    (so deleting them would only show up in the regeneration check), and a withdrawn,
+    stopped or replaced experiment's figures may stay for the record.
+    """
+    groups: dict[tuple[str, str, str], list[str]] = {}
+    indexes: dict[str, dict[str, tuple[str, str, str]]] = {}
+    for figure in sorted(set(figures)):
+        sidecar = read_sidecar(figure) or {}
+        study = project_parts(figure, root)[0]
+        experiment = sidecar.get("experiment")
+        if experiment:
+            if study not in indexes:
+                indexes[study] = read_experiment_index(root / "projects" / study)
+            match = re.fullmatch(r"(\d{3})_(\S+)", str(experiment))
+            row = indexes[study].get(match.group(1)) if match else None
+            if row is None or match is None or row[0] != match.group(2):
+                origin, word = f"experiment {experiment} (no row in its index)", None
+            else:
+                origin, word = f"experiment {experiment} (状態 {row[1]})", status_word(row[1])
+            if word in BLOCKED_STATUSES:
+                advice = (
+                    "nothing regenerates them; they may stay for the record, or go with their "
+                    ".provenance.json (git rm) once no text needs them"
+                )
+            else:
+                advice = (
+                    "no action needed if they are diagnostics (its run.py publishes them again "
+                    "on every rerun); \\includegraphics one if the text needs it"
+                )
+        else:
+            origin = str(sidecar.get("script") or "an unknown script")
+            advice = "\\includegraphics one if the text needs it, or stop writing it"
+        groups.setdefault((rel(figure.parent), origin, advice), []).append(figure.name)
+    return [
+        Finding(
+            "info",
+            "I5",
+            location,
+            f"{len(names)} generated figure(s) that no checked document includes, from "
+            f"{origin}: {', '.join(names)} -- {advice}",
+        )
+        for (location, origin, advice), names in sorted(groups.items())
+    ]
+
+
+def journal_readable(data: object) -> bool:
+    """Whether the harness can roll back a publication journal holding ``data``.
+
+    The rule of ``_recover_locked`` in projects/<study>/src/utils/experiment.py: a JSON
+    object whose ``entries`` are {target, backup} objects and whose ``processed`` is null
+    or a {target, backup, source} object; targets and sources are paths, a backup a path
+    or null. Anything else makes the next full run stop instead of rolling it back.
+    """
+
+    def paths(item: object, keys: tuple[str, ...]) -> bool:
+        return (
+            isinstance(item, dict)
+            and all(key in item for key in keys)
+            and all(
+                isinstance(item[key], str) or (key == "backup" and item[key] is None)
+                for key in keys
+            )
+        )
+
+    if not isinstance(data, dict) or "processed" not in data:
+        return False
+    entries, processed = data.get("entries"), data["processed"]
+    return (
+        isinstance(entries, list)
+        and all(paths(entry, ("target", "backup")) for entry in entries)
+        and (processed is None or paths(processed, ("target", "backup", "source")))
+    )
+
+
+def check_publications(root: Path, findings: list[Finding], *, submission: bool) -> None:
+    """E12 a run's publication killed midway, W18 temporaries such a kill left behind.
+
+    The harness (projects/<study>/src/utils/experiment.py) publishes through a journal,
+    result/.publication.json, and .<name>.<pid>.part / .previous files beside each
+    destination; the next full run in the study rolls back or clears what a kill left.
+    Until then a journal means result/ and data/processed/ may mix old and new artifacts.
+    """
+    projects = root / "projects"
+    if not projects.is_dir():
+        return
+    for study_dir in sorted(projects.iterdir()):
+        if not study_dir.is_dir() or study_dir.name.startswith("."):
+            continue
+        study = study_dir.name
+        result = study_dir / "result"
+        leftovers: list[Path] = []
+        for directory in (
+            result,
+            result / "figures",
+            result / "tables",
+            study_dir / "data" / "processed",
+        ):
+            try:
+                entries = sorted(directory.iterdir())
+            except OSError:
+                continue
+            for path in entries:
+                match = RE_PUBLICATION_TEMP.match(path.name)
+                if match and (directory != result or match["name"] == PUBLICATION_JOURNAL[1:]):
+                    leftovers.append(path)
+        journal = result / PUBLICATION_JOURNAL
+        if journal.exists() or journal.is_symlink():
+            try:
+                data = json.loads(journal.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = None
+            experiment = data.get("experiment") if isinstance(data, dict) else None
+            if isinstance(experiment, str) and re.fullmatch(r"\d{3}_[a-z0-9_]+", experiment):
+                who = f"experiment {experiment}"
+                script = f"projects/{study}/experiments/{experiment}/run.py"
+                example = f" (for example `{GENERATOR_COMMAND} {rerun_hint(script)}`)"
+            else:
+                who, example = "an experiment", ""
+            if journal_readable(data):
+                repair = (
+                    f"before building, start any full run of an experiment in {study}{example}: "
+                    "it rolls the publication back first"
+                )
+            else:
+                repair = (
+                    "the journal is unreadable, so a full run will not roll it back: restore "
+                    f"projects/{study}/result/ from git (git status shows what changed), rename "
+                    "a data/processed/.<NNN_slug>.<pid>.previous directory back if there is "
+                    "one, then delete the journal and the .part/.previous temporaries"
+                )
+            findings.append(
+                Finding(
+                    "error",
+                    "E12",
+                    rel(journal),
+                    f"a publication of {who} in {study} was killed midway, so "
+                    f"projects/{study}/result/ and data/processed/ may mix its new artifacts "
+                    f"with older ones ({len(leftovers)} temporary file(s) beside them) -- "
+                    f"{repair}",
+                )
+            )
+        elif leftovers:
+            names = [rel(path) for path in leftovers]
+            shown = ", ".join(names[:4]) + (f" and {len(names) - 4} more" if len(names) > 4 else "")
+            findings.append(
+                Finding(
+                    "error" if submission else "warning",
+                    "W18",
+                    f"projects/{study}",
+                    f"{len(names)} temporary file(s) of a killed publication left: {shown} -- "
+                    "result/ is consistent (the kill came before or after the swap); the next "
+                    f"full run of an experiment in {study} deletes them, or delete them by hand "
+                    "while no run is publishing",
+                )
+            )
 
 
 # --- Front matter (submission) -------------------------------------------------------------------
@@ -1346,6 +1827,8 @@ class Analysis:
     used_stems: set[str]
     cited: set[str]
     artifacts: list[Artifact]
+    # Generated figures this document does not include (I5 once all documents are known).
+    unused_generated: list[Path] = field(default_factory=list)
 
 
 def analyse(
@@ -1373,8 +1856,8 @@ def analyse(
     check_metadata(graph.files, findings, submission=submission)
     check_citations(index, bib_keys, findings)
     check_bib_fields(entries, findings, submission=submission)
-    figures, used_stems = check_figures(
-        index, draft_dir, graphicspath_dirs(index, draft_dir), findings
+    figures, used_stems, unused_generated = check_figures(
+        index, draft_dir, graphicspath_dirs(index, draft_dir), findings, root
     )
     check_locations(graph, figures, index, draft_dir, root, findings)
     check_values(index, graph, findings, submission=submission)
@@ -1382,6 +1865,7 @@ def analyse(
     check_provenance(artifacts, root, findings, submission=submission)
     check_figure_ledger(draft_dir / "figures", figures, findings)
     check_result_names(root, findings)
+    check_publications(root, findings, submission=submission)
     if submission:
         check_front_matter(graph, draft_dir, findings)
     for text, path, lineno in index.todos:
@@ -1392,7 +1876,7 @@ def analyse(
     if with_log:
         job = Path(main_name).stem
         check_log(draft_dir / "build" / job / f"{job}.log", findings, draft_dir=draft_dir)
-    return Analysis(findings, used_stems, set(index.cites), artifacts)
+    return Analysis(findings, used_stems, set(index.cites), artifacts, unused_generated)
 
 
 def run_checks(
@@ -1402,9 +1886,9 @@ def run_checks(
     with_log: bool = True,
     submission: bool = False,
 ) -> list[Finding]:
-    return analyse(
-        draft_dir, main_name=main_name, with_log=with_log, submission=submission
-    ).findings
+    analysis = analyse(draft_dir, main_name=main_name, with_log=with_log, submission=submission)
+    root = Path(draft_dir).resolve().parent
+    return analysis.findings + unused_figure_findings(analysis.unused_generated, root)
 
 
 def run_all(
@@ -1433,7 +1917,13 @@ def run_all(
             if key not in seen:
                 seen.add(key)
                 merged.append(finding)
-    return merged
+    unused = [
+        figure
+        for analysis in analyses
+        for figure in analysis.unused_generated
+        if figure.stem not in used_stems and figure.name not in used_stems
+    ]
+    return merged + unused_figure_findings(unused, Path(draft_dir).resolve().parent)
 
 
 def generator_command(script: str) -> str:
@@ -1597,7 +2087,7 @@ def main(argv: list[str] | None = None, *, root: Path = REPO_ROOT) -> int:
     parser.add_argument(
         "--submission",
         action="store_true",
-        help="final checks: placeholders, TODOs, empty front matter, W14/W15/W17/I4 are errors",
+        help="final checks: placeholders, TODOs, empty front matter, W14/W15/W17/W18/I4 are errors",
     )
     parser.add_argument("--no-log", action="store_true", help="skip the build log")
     parser.add_argument(

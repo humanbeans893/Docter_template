@@ -7,7 +7,9 @@ markers the tools edit exist, and every registration names an existing study and
 """
 
 import ast
+import builtins
 import re
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -459,6 +461,82 @@ def test_documents_name_only_existing_make_targets():
                 ]
     assert not unknown, "These documents name make targets the Makefile does not have:\n" + (
         "\n".join(sorted(set(unknown)))
+    )
+
+
+PYTHON_BLOCK = re.compile(r"^[ \t]*```python\n(.*?)^[ \t]*```", re.MULTILINE | re.DOTALL)
+
+
+def bound_names(tree: ast.AST) -> set[str]:
+    """Names a module or snippet assigns, imports or defines anywhere in it."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+            names.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.alias):
+            names.add((node.asname or node.name).split(".")[0])
+        elif isinstance(node, ast.arg):
+            names.add(node.arg)
+    return names
+
+
+def test_import_guide_examples_use_only_what_the_import_run_py_defines():
+    # The guide's Python examples are pasted into an import experiment's run.py: a name the
+    # template does not define (cfg instead of config) fails with NameError at the last stage,
+    # after the past files were verified and the numbers checked.
+    template = REPO_ROOT / "projects" / "_template" / "experiments" / "_import_template" / "run.py"
+    defined = bound_names(ast.parse(template.read_text(encoding="utf-8"))) | set(dir(builtins))
+    guide = REPO_ROOT / "docs" / "importing-past-results.md"
+    text = guide.read_text(encoding="utf-8")
+    blocks = list(PYTHON_BLOCK.finditer(text))
+    assert blocks, f"{guide.relative_to(REPO_ROOT)} has no ```python examples to check"
+    unknown = []
+    for block in blocks:
+        tree = ast.parse(textwrap.dedent(block.group(1)))
+        loads = [n for n in ast.walk(tree) if isinstance(n, ast.Name)]
+        used = {n.id for n in loads if isinstance(n.ctx, ast.Load)}
+        missing = sorted(used - bound_names(tree) - defined)
+        if missing:
+            line = text.count("\n", 0, block.start()) + 1
+            unknown.append(f"docs/importing-past-results.md:{line}: {missing}")
+    assert not unknown, (
+        "These examples use names that the import run.py "
+        f"({template.relative_to(REPO_ROOT)}) does not define:\n" + "\n".join(unknown)
+    )
+
+
+QUOTED_IMPORT = re.compile(r"(?:import ([\w.]+)(?: as \w+)?|from ([\w.]+) import [\w., ]+)")
+
+
+def test_documents_quote_import_lines_as_every_run_py_template_has_them():
+    # AGENTS.md told agents to keep `from src.utils import experiment, figures, tables` after
+    # the experiment template had split that line in two (`tables as tables`, for lint): an
+    # agent that "restores" a quoted line undoes the template. A quoted import must be the
+    # line of every template that imports that module; "…" in a span names the line loosely.
+    templates = REPO_ROOT / "projects" / "_template" / "experiments"
+    imports: dict[str, list[set[str]]] = {}  # module -> each importing template's lines
+    for template in ("_template", "_import_template"):
+        found: dict[str, set[str]] = {}
+        for line in (templates / template / "run.py").read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if match := QUOTED_IMPORT.fullmatch(line):
+                found.setdefault(match.group(1) or match.group(2), set()).add(line)
+        for module, lines in found.items():
+            imports.setdefault(module, []).append(lines)
+    stale = []
+    for path in guide_documents():
+        text = FENCED_CODE.sub("", path.read_text(encoding="utf-8"))
+        for span in map(str.strip, INLINE_CODE.findall(text)):
+            match = QUOTED_IMPORT.fullmatch(span)
+            if match and not all(
+                span in lines for lines in imports.get(match.group(1) or match.group(2), [set()])
+            ):
+                stale.append(f"{path.relative_to(REPO_ROOT)}: `{span}`")
+    assert not stale, (
+        "These documents quote an import line that not every run.py template importing that "
+        "module has:\n" + "\n".join(sorted(set(stale)))
     )
 
 

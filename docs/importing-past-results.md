@@ -142,7 +142,7 @@ rsync -a --copy-unsafe-links --exclude .git --exclude .venv --exclude __pycache_
 | `TRANSCRIBED` | 論文にしか残っていない数値(ケース D) |
 | `TRANSCRIBED_SOURCE`・`TRANSCRIBED_FORMATS` | その出典(`"<bibキー>, Table 2"` など)と、実数ごとの書式(`{"rmse": "{:.2f}"}`) |
 
-これらは `params.py` の末尾の `PARAMS` にまとまり、`run.py` は `run.params` から読みます(`SEED` と一緒に `out/params_used.json` に残ります)。`SMOKE` は空のままで構いません。`--smoke` も同じファイルで全段階を通し、何も公開しません。
+これらは `params.py` の末尾の `PARAMS` にまとまり、`run.py` は `p = run.params` から小文字のキーで読みます(`p["source_dir"]` など。`SEED` と一緒に `out/params_used.json` に残ります)。`SMOKE` は空のままで構いません。`--smoke` も同じファイルで全段階を通し、何も公開しません。
 
 ### 7. `run.py` を実装して実行する
 
@@ -154,7 +154,7 @@ rsync -a --copy-unsafe-links --exclude .git --exclude .venv --exclude __pycache_
    - **R2**: 残っている数値(CSV・JSON など)を読んで図表と値を作り、読んだ値を `actual` に入れる。
    - **R3**: 取り込む画像を選ぶ(ケース C)。論文中の数値は `TRANSCRIBED`(ケース D)。
 3. **既報の数値との照合**: `REFERENCE_VALUES` があれば `crosscheck` で `actual` と照合する。合わなければここで止まる。照合の表は `run.out()` で `<study>-<slug>-crosscheck.csv` に書き、`run.promote()` で出す(本実行が通ると `result/tables/` に入る)。
-4. **生成物を書く**: `save_figure`・`write_latex_table`・`write_latex_values` を `provenance={"reproducibility": "R1", "sources": sources}`(R2 なら `"R2"`)付きで呼び、R3 の画像は `import_figure` で、`TRANSCRIBED` は値のファイルとして書く。`sources` は読んだ過去のファイルの一覧で、`src.utils.provenance.source_entry(params.SOURCE_DIR / name, config, sha256=verified[name])` で作る。照合表を付録に載せるなら、ここで `write_latex_table` で書く(名前は `…-crosscheck` とは別にする。1回の実行で同じ名前は1度しか書けない)。
+4. **生成物を書く**: `save_figure`・`write_latex_table`・`write_latex_values` を `provenance={"reproducibility": "R1", "sources": sources}`(R2 なら `"R2"`)付きで呼び、R3 の画像は `import_figure` で、`TRANSCRIBED` は値のファイルとして書く。`sources` は読んだ過去のファイルの一覧で、`src.utils.provenance.source_entry(p["source_dir"] / name, config, sha256=verified[name])` で作る。照合表を付録に載せるなら、ここで `write_latex_table` で書く(名前は `…-crosscheck` とは別にする。1回の実行で同じ名前は1度しか書けない)。
 
 - 生成物の名前は `<study>-<slug>-<内容>`(slug は実験名の `_` を `-` にしたもの。`run.py` の `PREFIX`)。
 - ヘルパーと `run.promote()` が書いたものは実行中は `out/staged/` に置かれ、本実行が最後まで通ったときだけ `result/` にまとめて入ります(`projects/<study>/experiments/README.md`)。実装の途中は `--smoke` で通します。照合に失敗した実行と `--smoke` は `result/` を変えないので、前に出した生成物はそのまま残ります。
@@ -248,11 +248,11 @@ docker compose exec research-template uv run python projects/<study>/experiments
 
 ### C. 画像しか残っていない
 
-```python
-from src.utils.figures import import_figure
+取り込みの `run.py` の「生成物を書く」段階に書きます(`config`・`figures`・`PREFIX`・`p = run.params` は雛形が定義済み)。
 
-import_figure(
-    params.SOURCE_DIR / "fig3.png", "<study>-<slug>", cfg,
+```python
+figures.import_figure(
+    p["source_dir"] / "fig3.png", f"{PREFIX}-fig3", config,
     note="装置の解析ソフトが出力した図。元の数値は残っていない",
     license="自作(未発表)",
 )
@@ -260,7 +260,7 @@ import_figure(
 
 - 再現性は常に R3。`note` に何を示す図か、なぜ作り直せないかを、`license` に権利(自作、出版社、第三者)を書く。既発表の図は出版社の規程を確かめ、転載の許諾を記録する。
 - `.png`・`.pdf`・`.jpg`・`.jpeg` はそのまま。`.tif`・`.gif`・`.bmp`・`.webp` は `convert_to_png=True` で PNG にする(最初の1枚。変換元は由来記録に残る)。
-- 取り込める大きさは 1 MB まで(追跡するファイルは 1 MB までに制限している)。大きい画像は `run.py` の中で縮小・圧縮した版を `out/` に作って渡し、方法を `note` に書く。`out/` に作った版を渡すときは、照合済みの元のファイルを `sources=[source_entry(params.SOURCE_DIR / "fig3.tif", cfg, sha256=verified["fig3.tif"])]` で一緒に渡す(`source_entry` は `src.utils.provenance`)。由来記録の `sources` には元のファイルが、`copied` には実際に写した `out/` のファイルが入る。図はできればベクトルの PDF にする。
+- 取り込める大きさは 1 MB まで(追跡するファイルは 1 MB までに制限している)。大きい画像は `run.py` の中で縮小・圧縮した版を `out/` に作って渡し、方法を `note` に書く。`out/` に作った版を渡すときは、照合済みの元のファイルを `sources=[source_entry(p["source_dir"] / "fig3.tif", config, sha256=verified["fig3.tif"])]` で一緒に渡す(`source_entry` は `src.utils.provenance`)。由来記録の `sources` には元のファイルが、`copied` には実際に写した `out/` のファイルが入る。図はできればベクトルの PDF にする。
 
 ### D. 数値が論文にしか残っていない
 

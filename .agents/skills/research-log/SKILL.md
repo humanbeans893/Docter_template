@@ -42,9 +42,9 @@ git status
 - **繰り返さない行き止まり**(新しい証拠が無い限り試さない方がよいこと) → `docs/guardrails.md` の
   「新しい証拠なしに繰り返さないこと」の1行(スタディ、パターン、何が起きたか、証拠、再訪の条件)
 - **撤回・訂正・置き換え**(一度出した結論を取り下げた・直した・後の実験が答え直した) → `AGENTS.md` の「実験」の
-  「状態と撤回」の手順(`summary.md` と索引 `projects/<study>/experiments/EXP_SUMMARY.md` の状態欄。撤回なら
-  `docs/guardrails.md` の「撤回した主張」の1行)。状態欄は `撤回`・`訂正`・`置き換え` で始め、
-  `(YYYY-MM-DD、→ NNN_<slug>)` を足してよい。理由は `summary.md` に書く
+  「状態と撤回」の手順(`summary.md` と索引 `projects/<study>/experiments/EXP_SUMMARY.md` の状態欄。撤回と、
+  古い主張がすでに外に出た(送った版・投稿・発表)訂正・置き換えなら `docs/guardrails.md` の「撤回した主張」の1行)。
+  状態欄は `撤回`・`訂正`・`置き換え` で始め、`(YYYY-MM-DD、→ NNN_<slug>)` を足してよい。理由は `summary.md` に書く
 
 ### 2. ユーザーに確かめる(必須)
 

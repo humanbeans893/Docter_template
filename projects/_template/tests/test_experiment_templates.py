@@ -24,6 +24,8 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not i
 # Placeholder of the import template's regeneration step, filled by the tests below.
 ACTUAL = "actual: dict[str, float] = {}"
 REFERENCE = '{"rmse": {"value": 0.42, "atol": 0.005, "source": "smith2024ocean, Table 2"}}'
+# How run.py's write-outputs comments show a call (fill_in uncomments them).
+EXAMPLE = "        #   "
 
 
 def clean_env() -> dict[str, str]:
@@ -205,6 +207,55 @@ def test_templates_import_the_harness_and_helpers_when_the_run_starts(study_root
         for alias in node.names
     }
     assert {"experiment", "figures", "tables"} <= top
+
+
+def fill_in(exp: Path) -> Path:
+    """Write the tables run.py's comments show, as a user does: uncomment them, define names."""
+    path = exp / "run.py"
+    lines: list[str] = []
+    open_call = False
+    for line in path.read_text(encoding="utf-8").splitlines(keepends=True):
+        example = line[len(EXAMPLE) :] if line.startswith(EXAMPLE) else ""
+        if example.startswith("tables.") or open_call:
+            open_call = example.rstrip().endswith("(") or (open_call and example != ")\n")
+            line = line.replace("#   ", "", 1)
+        lines.append(line)
+        if line.strip() == 'run.stage("write outputs")':
+            lines.append("        n, rmse = int(sample.size), float(sample.std())\n")
+    text = "".join(lines)
+    assert text.count("\n        tables.write_latex_") == 2, "run.py no longer shows both calls"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_the_experiment_template_passes_lint_before_and_after_it_is_filled_in(study, study_root):
+    # make lint and the CI run ruff over every experiment: the template must pass both
+    # untouched and once its tables are written as its comments show (no stale noqa).
+    ruff = shutil.which("ruff")
+    pyproject = study_root.parents[1] / "pyproject.toml"
+    if ruff is None or not pyproject.is_file():
+        pytest.skip("ruff or the repository's pyproject.toml is not here")
+    repo = study.parents[1]
+    shutil.copy2(pyproject, repo / "pyproject.toml")  # the repository's lint rules
+    untouched = instantiate(study, "_template", "001_untouched") / "run.py"
+    filled = fill_in(instantiate(study, "_template", "002_filled"))
+
+    for command in (["check"], ["format", "--check"]):
+        lint = subprocess.run(
+            [ruff, *command, "--no-cache", str(untouched), str(filled)],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert lint.returncode == 0, " ".join(command) + "\n" + lint.stdout + lint.stderr
+
+    smoke = run(filled.parent, "--smoke")  # and the filled-in run works
+    assert smoke.returncode == 0, smoke.stdout + smoke.stderr
+    assert record(filled.parent, smoke=True)["staged"] == [
+        f"tables/{study.name}-main",
+        f"tables/{study.name}-summary",
+    ]
 
 
 def test_import_template_refuses_to_run_before_files_are_registered(study):

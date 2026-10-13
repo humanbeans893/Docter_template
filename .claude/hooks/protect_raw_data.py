@@ -10,8 +10,13 @@ agent; malformed input never blocks.
   and newlines with quoting respected, and subshells, cd/pushd, simple variables, for loops,
   here-documents, $(...), bash -c, eval and wrappers (sudo, env, timeout, xargs, ...) are
   followed. A write target is: the destination of cp/rsync/install/ln/scp; any path argument of
-  mv/rm/rmdir/touch/mkdir/truncate/chmod/chown/chgrp/tee/shred/unlink and of sed -i/perl -i;
-  dd of=; sort -o; the -C/--directory (or working) directory of tar -x and the archive of
+  mv/rm/rmdir/touch/mkdir/truncate/chmod/chown/chgrp/tee/sponge/shred/unlink, of rename
+  (without -n) and of the in-place editors sed -i, perl -i, nkf --overwrite/--in-place and
+  awk/gawk -i inplace; the files dos2unix/unix2dos convert in place (the output file with -n);
+  dd of=; sort -o; iconv -o; nkf -O; the output file of uniq; the output prefix of split and
+  csplit; the file patch changes (its operand, -o, or the files named in the diff it reads
+  from -i, a file or a here-document, under its -d or working directory) and the files git
+  apply changes; the -C/--directory (or working) directory of tar -x and the archive of
   tar -c/-r/-u; unzip -d; output files of curl/wget; a raw file given to gzip/xz/zstd/bzip2
   without -c; find over raw with -delete/-exec/-execdir/-ok/-okdir; an output redirection
   (>, >>, &>, ...). Inside this repository, recursive rm or mv of a directory that holds raw
@@ -74,10 +79,50 @@ SHELLS = frozenset({"bash", "sh", "dash", "zsh", "ksh"})
 FIND_OPERATORS = frozenset({"(", ")", "!", ","})
 ANY_PATH = frozenset(
     (
-        "rmdir touch mkdir truncate chmod chown chgrp tee shred unlink mkfifo mknod chattr setfacl"
+        "rmdir touch mkdir truncate chmod chown chgrp tee sponge shred unlink mkfifo mknod chattr"
+        " setfacl"
     ).split()
 )
-DESTRUCTIVE = ANY_PATH | {"rm", "mv"}
+NEWLINE_CONVERTERS = frozenset("dos2unix unix2dos mac2unix unix2mac".split())
+RENAMERS = frozenset("rename prename file-rename perl-rename".split())
+# Commands that rewrite the files they are given in some modes only (sed -i, nkf --overwrite).
+REWRITERS = NEWLINE_CONVERTERS | RENAMERS | {"sed", "perl", "nkf", "iconv", "awk", "gawk"}
+DESTRUCTIVE = ANY_PATH | {"rm", "mv", "patch", "split", "csplit"}
+PERL_VALUE_SWITCHES = "eEFIMmVxdDC"  # the rest of the word is the value (-Mmodule, -CSDi)
+DOS2UNIX_INFO = re.compile(r"-i[0bcdehlmptu]*|--info(=.*)?")  # report only; -iso converts
+RENAME_DRY_RUN = frozenset({"-n", "--no-act", "--nono", "--dry-run", "--just-print"})
+ICONV_LONG_VALUES = frozenset({"--output", "--from-code", "--to-code"})
+AWK_SHORT_VALUES = "fvFilEe"
+AWK_LONG_VALUES = frozenset(
+    "--file --assign --field-separator --include --load --source --exec".split()
+)
+AWK_INCLUDES_INPLACE = re.compile(r'@(?:include|load)\s*"inplace(?:\.awk)?"')
+PATCH_SHORT_VALUES = "BdDFgiopVrYz"
+PATCH_LONG_VALUES = frozenset(
+    (
+        "--prefix --directory --ifdef --fuzz --get --input --output --strip --reject-file"
+        " --version-control --basename-prefix --suffix --quoting-style --reject-format --read-only"
+    ).split()
+)
+GIT_APPLY_LONG_VALUES = frozenset(
+    "--directory --exclude --include --whitespace --build-fake-ancestor".split()
+)
+DIFF_NAMED = re.compile(r"(?:Index:|diff --git|rename from|rename to|copy to) (.*)")
+MAX_DIFF_BYTES = 8 << 20
+# command -> (short options taking a value, long options taking a value)
+OUTPUT_SPECS = {
+    "split": (
+        "abClnt",
+        frozenset(
+            (
+                "--suffix-length --bytes --line-bytes --lines --number --separator"
+                " --additional-suffix --filter"
+            ).split()
+        ),
+    ),
+    "csplit": ("fbn", frozenset({"--prefix", "--suffix-format", "--digits"})),
+    "uniq": ("fsw", frozenset({"--skip-fields", "--skip-chars", "--check-chars"})),
+}
 COMPRESSORS = frozenset(
     "gzip gunzip pigz unpigz bzip2 bunzip2 xz unxz lzma unlzma zstd unzstd".split()
 )
@@ -174,13 +219,15 @@ class Lexer:
     """Split a shell line into ("word", text) and ("op", text) tokens with quotes removed.
 
     The bodies of $(...), `...`, <(...) and >(...) are collected in `subs` so they are checked as
-    commands of their own; here-document bodies are skipped because they are data.
+    commands of their own; here-document bodies are data, not commands: they go to `bodies`, in
+    the order of their << operators, for the commands that read them (patch, git apply).
     """
 
     def __init__(self, text: str):
         self.text, self.n = text, len(text)
         self.tokens: list[tuple[str, str]] = []
         self.subs: list[str] = []
+        self.bodies: list[str] = []
         self.heredocs: list[tuple[str, bool]] = []
         self.heredoc_op: str | None = None
         self.buf: list[str] = []
@@ -347,8 +394,9 @@ class Lexer:
                 continue
             if c == "\n" and pending:  # a here-document body is data (`it's` is no quote)
                 saved, self.heredocs = self.heredocs, pending
+                saved_bodies, self.bodies = self.bodies, []  # the substitution's lexer keeps them
                 i = self.skip_heredocs(i + 1)
-                self.heredocs, pending = saved, []
+                self.heredocs, self.bodies, pending = saved, saved_bodies, []
                 continue
             if t.startswith("<<", i) and not t.startswith("<<<", i):
                 strip = t.startswith("<<-", i)
@@ -377,12 +425,15 @@ class Lexer:
     def skip_heredocs(self, i: int) -> int:
         t = self.text
         for delim, strip_tabs in self.heredocs:
+            start = end = i
             while i < self.n:
                 j = t.find("\n", i)
                 line = t[i:] if j < 0 else t[i:j]
-                i = self.n if j < 0 else j + 1
+                end, i = i, (self.n if j < 0 else j + 1)
                 if (line.lstrip("\t") if strip_tabs else line).rstrip("\r") == delim:
                     break
+                end = i
+            self.bodies.append(t[start:end])
         self.heredocs.clear()
         return i
 
@@ -479,7 +530,7 @@ def first_operand(args, short_values="", long_values=EMPTY) -> int:
 
 
 def in_place(name: str, args) -> bool:
-    """sed -i / perl -i (with or without a backup suffix) edit their files in place."""
+    """sed -i/-I and perl -i (with or without a backup suffix) edit their files in place."""
     for a in args:
         if a == "--" or not a.startswith("-"):
             continue
@@ -487,13 +538,112 @@ def in_place(name: str, args) -> bool:
             if name == "sed" and a.startswith("--in-place"):
                 return True
             continue
-        stop = "efl" if name == "sed" else "eE"
         for ch in a[1:]:
-            if ch in stop:
-                break
-            if ch == "i":
+            if ch == "i" or (name == "sed" and ch == "I"):  # -I: BSD sed
                 return True
+            if ch in ("efl" if name == "sed" else PERL_VALUE_SWITCHES):
+                break  # the rest is a value: sed -e script, perl -MList::Util, -Ilib
     return False
+
+
+def newline_conversion(args) -> tuple[list[str], bool]:
+    """dos2unix and its siblings: (files written, whether files handed to it are rewritten).
+
+    Files are converted in place (-o, the default) unless -n pairs each with an output file
+    (INFILE OUTFILE), -O writes to stdout or -i only reports; a mode applies to the files after
+    it, and files that xargs appends get the last one.
+    """
+    written: list[str] = []
+    mode, infile, value = "old", False, False
+    for a in args:
+        if value:
+            value = False
+        elif DOS2UNIX_INFO.fullmatch(a):
+            mode = "info"
+        elif a in ("-n", "--newfile"):
+            mode, infile = "new", False
+        elif a in ("-o", "--oldfile"):
+            mode = "old"
+        elif a in ("-O", "--to-stdout"):
+            mode = "stdout"
+        elif a in ("-c", "--convmode", "-D", "--display-enc"):
+            value = True
+        elif a.startswith("-"):
+            continue
+        elif mode == "old":
+            written.append(a)
+        elif mode == "new":
+            if infile:
+                written.append(a)
+            infile = not infile
+    return written, bool(written) or mode in ("old", "new")
+
+
+def rewritten(name: str, args) -> tuple[list[str], bool]:
+    """A command of REWRITERS: (the files it writes, whether it rewrites the files it is given).
+
+    The second value is what find -exec and xargs need: whether running the command on each
+    file they hand it changes or replaces that file.
+    """
+    if name in ("sed", "perl"):
+        if in_place(name, args):
+            return [a for a in args if not a.startswith("-")], True
+        return [], False
+    if name in NEWLINE_CONVERTERS:
+        return newline_conversion(args)
+    if name in RENAMERS:
+        operands, opts = split_args(args, "eE")
+        return ([], False) if RENAME_DRY_RUN & set(opts) else (operands, True)
+    if name == "nkf":
+        operands, _ = split_args(args)
+        if any(a.startswith(("--overwrite", "--in-place")) for a in args):
+            return operands, True
+        if any(a.startswith("-") and not a.startswith("--") and "O" in a for a in args):
+            return [operands[1] if len(operands) > 1 else "nkf.out"], True  # -O: output file
+        return [], False
+    if name == "iconv":
+        _, opts = split_args(args, "oft", ICONV_LONG_VALUES)
+        outputs = [v for v in opts.get("-o", []) + opts.get("--output", []) if v != "-"]
+        return outputs, bool(outputs)
+    # awk/gawk: gawk's inplace extension (-i inplace, @include "inplace") rewrites every input
+    operands, opts = split_args(args, AWK_SHORT_VALUES, AWK_LONG_VALUES)
+    sources = opts.get("-e", []) + opts.get("--source", [])
+    if not any(o in opts for o in ("-f", "--file", "-e", "--source", "-E", "--exec")):
+        sources, operands = operands[:1], operands[1:]  # the first operand is the program
+    libraries = [v for o in ("-i", "--include", "-l", "--load") for v in opts.get(o, [])]
+    if any(posixpath.basename(v).replace(".awk", "") == "inplace" for v in libraries) or any(
+        AWK_INCLUDES_INPLACE.search(s) for s in sources
+    ):
+        return [f for f in operands if not ASSIGNMENT.match(f)], True
+    return [], False
+
+
+def strip_level(values) -> int | None:
+    """The last numeric -p/--strip value of patch or git apply (None: not given)."""
+    return next((int(v) for v in reversed(values) if v.isdigit()), None)
+
+
+def diff_names(texts) -> list[str]:
+    """The file names in the headers of unified, context and git diffs."""
+    names: dict[str, None] = {}
+    for text in texts:
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            after = lines[i + 1] if i + 1 < len(lines) else ""
+            if (line.startswith("--- ") and after.startswith("+++ ")) or (
+                line.startswith("*** ") and after.startswith("--- ")
+            ):
+                found = [line[4:], after[4:]]
+            else:
+                match = DIFF_NAMED.match(line)
+                found = [match.group(1)] if match else []
+            for rest in found:
+                rest = rest.split("\t")[0].strip()  # `--- a/x.csv<TAB>2024-01-01 ...`
+                for name in (rest, *rest.split()):  # a name with spaces, or `a/x b/x` of git
+                    name = name.strip('"')
+                    if name and name != "/dev/null":
+                        names[name] = None
+    return list(names)
 
 
 def compressor_writes(args) -> bool:
@@ -518,6 +668,7 @@ class Shell:
         self.vars: dict[str, str] = dict(variables or {})
         self.reasons: list[str] = []
         self.pipe_raw = False
+        self.stdin: tuple[str, str] | None = None  # ("file", path) or ("text", here-document)
 
     @property
     def cwd(self) -> str:
@@ -525,13 +676,15 @@ class Shell:
 
     # --- entry points ------------------------------------------------------------------------
     def run(self, text: str) -> list[str]:
+        lexer = Lexer(text)
         try:
-            tokens, subs = Lexer(text).run()
+            tokens, subs = lexer.run()
+            bodies = lexer.bodies
         except LexError:
-            tokens, subs = fallback_tokens(text), []
+            tokens, subs, bodies = fallback_tokens(text), [], []
         for sub in subs:
             self.recurse(sub)
-        self.walk(tokens)
+        self.walk(tokens, bodies)
         return self.reasons
 
     def recurse(self, text: str) -> None:
@@ -539,12 +692,16 @@ class Shell:
             inner = Shell(self.cwd, self.root, self.depth + 1, self.vars)
             self.reasons.extend(inner.run(text))
 
-    def walk(self, tokens) -> None:
+    def walk(self, tokens, bodies) -> None:
         words: list[str] = []
         redirects: list[tuple[str, str]] = []
         pending = None
+        heredoc = 0
         for kind, text in tokens:
             if kind == "word":
+                if pending in ("<<", "<<-"):  # the delimiter: what the command reads is the body
+                    text = bodies[heredoc] if heredoc < len(bodies) else ""
+                    heredoc += 1
                 if pending:
                     redirects.append((pending, text))
                     pending = None
@@ -565,13 +722,19 @@ class Shell:
         self.finish(words, redirects)
 
     def finish(self, words, redirects) -> None:
+        self.stdin = None
         for op, target in redirects:
+            if op in ("<<", "<<-", "<<<"):
+                self.stdin = ("text", target)
+                continue
             target = self.expand(target)
             if op in WRITE_REDIRECTS:
                 if not (op == ">&" and (target.isdigit() or target == "-")):
                     self.target(target, f"redirection {op}")
             elif op in ("<", "<&") and self.level(target) == RAW:
                 self.pipe_raw = True
+            if op == "<":
+                self.stdin = ("file", target)
         if words:
             self.command([self.expand(w) for w in words])
 
@@ -627,6 +790,38 @@ class Shell:
         return self.level(".") == RAW or any(
             self.level(a) == RAW for a in args if not a.startswith("-")
         )
+
+    def input_texts(self, files) -> list[str]:
+        """What a command reads: the given files (`-` is stdin), else its standard input.
+
+        Only a regular file that exists now, or a here-document, can be read; a pipe or a file
+        written earlier in the same line cannot.
+        """
+        sources = [("file", f) for f in files if f != "-"]
+        if (not files or "-" in files) and self.stdin:
+            sources.append(self.stdin)
+        texts = []
+        for kind, value in sources:
+            if kind == "text":
+                texts.append(value)
+                continue
+            path = self.resolve(value)
+            if path.startswith("/") and os.path.isfile(path):
+                try:
+                    with open(path, "rb") as handle:
+                        texts.append(handle.read(MAX_DIFF_BYTES).decode("utf-8", "replace"))
+                except OSError:
+                    pass
+        return texts
+
+    def diff_targets(self, texts, bases, strip, what: str) -> None:
+        """Target the files a diff names, below each base, with -p `strip` (None: any level)."""
+        for name in diff_names(texts):
+            parts = [p for p in name.split("/") if p]
+            for k in range(len(parts)) if strip is None else [strip]:
+                rest = name if k == 0 else "/".join(parts[k:])
+                for base in bases if rest else []:
+                    self.target(posixpath.join(base, rest), what)
 
     # --- commands ----------------------------------------------------------------------------
     def command(self, words) -> None:
@@ -771,11 +966,59 @@ class Shell:
         for operand in operands:
             self.target(operand, "rm", ancestors=recursive)
 
-    def h_in_place(self, name, args) -> None:
-        if in_place(name, args):
-            for a in args:
-                if not a.startswith("-"):
-                    self.target(a, f"{name} -i")
+    def h_rewrite(self, name, args) -> None:
+        what = f"{name} -i" if name in ("sed", "perl") else name
+        for path in rewritten(name, args)[0]:
+            self.target(path, what)
+
+    def h_output(self, name, args) -> None:
+        """The output files of split and csplit (PREFIXaa, PREFIX00) and of uniq INPUT OUTPUT."""
+        operands, opts = split_args(args, *OUTPUT_SPECS[name])
+        if name == "split":
+            for command in opts.get("--filter", []):
+                self.recurse(command)
+            self.target(operands[1] if len(operands) > 1 else "x", "split output prefix")
+        elif name == "csplit":
+            prefix = (opts.get("-f", []) + opts.get("--prefix", []) or ["xx"])[-1]
+            self.target(prefix, "csplit output prefix")
+        elif len(operands) > 1 and operands[1] != "-":
+            self.target(operands[1], "uniq output")
+
+    def h_patch(self, name, args) -> None:
+        operands, opts = split_args(args, PATCH_SHORT_VALUES, PATCH_LONG_VALUES)
+        if any(o in opts for o in ("--dry-run", "--check", "-C")):
+            return
+        directory = (opts.get("-d", []) + opts.get("--directory", []) or ["."])[-1]
+        for opt in ("-o", "--output", "-r", "--reject-file", "-B", "--prefix"):
+            for value in opts.get(opt, []):
+                if value != "-":
+                    self.target(posixpath.join(directory, value), f"patch {opt}")
+        if "-o" in opts or "--output" in opts:
+            return  # the patched file goes there; the original stays as it is
+        if operands:
+            self.target(posixpath.join(directory, operands[0]), "patch")
+            return
+        self.target(directory, "patch in")  # the diff names files below the directory
+        inputs = opts.get("-i", []) + opts.get("--input", [])
+        # patch opens -i FILE after its cd into -d; the shell opens `< FILE` before it.
+        texts = self.input_texts([posixpath.join(directory, v) for v in inputs[-1:] if v != "-"])
+        strip = strip_level(opts.get("-p", []) + opts.get("--strip", []))
+        self.diff_targets(texts, [directory], strip, "patch (a file named in the diff)")
+
+    def git_apply(self, directory: str, args) -> None:
+        operands, opts = split_args(args, "pC", GIT_APPLY_LONG_VALUES)
+        reports = ("--stat", "--numstat", "--summary", "--check")
+        if any(o in opts for o in reports) and "--apply" not in opts:
+            return
+        if "--cached" in opts and "--index" not in opts:
+            return  # only the index changes
+        self.target(directory, "git apply in")
+        # Paths are relative to the top of the repository (or the directory outside one).
+        prefix = (opts.get("--directory") or [""])[-1]
+        bases = [posixpath.join(b, prefix) for b in dict.fromkeys([directory, self.root or "."])]
+        texts = [t for f in operands or ["-"] for t in self.input_texts([f])]
+        strip = strip_level(opts.get("-p", []))
+        self.diff_targets(texts, bases, strip, "git apply (a file named in the diff)")
 
     def h_dd(self, name, args) -> None:
         for a in args:
@@ -899,13 +1142,17 @@ class Shell:
             self.target(prefix, "wget download directory")
 
     def h_git(self, name, args) -> None:
-        i = 0
+        i, directory = 0, "."
         while i < len(args) and args[i].startswith("-"):
+            if args[i] == "-C" and i + 1 < len(args):
+                directory = posixpath.join(directory, args[i + 1])
             i += 2 if args[i] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace") else 1
         if i >= len(args):
             return
         sub, rest = args[i], args[i + 1 :]
-        if sub == "clean":
+        if sub == "apply":
+            self.git_apply(directory, rest)
+        elif sub == "clean":
             for a in rest:
                 if a == "--":
                     break
@@ -1002,7 +1249,7 @@ def destructive(shell: Shell, words, *, shells: bool = False) -> bool:
     return (
         cmd in DESTRUCTIVE
         or (shells and cmd in SHELLS | {"eval", "xargs"})
-        or (cmd in ("sed", "perl") and in_place(cmd, args))
+        or (cmd in REWRITERS and rewritten(cmd, args)[1])
         or (cmd in COMPRESSORS and compressor_writes(args))
     )
 
@@ -1012,6 +1259,8 @@ HANDLERS = {
     **dict.fromkeys(COPY_SPECS, Shell.h_copy),
     **dict.fromkeys(COMPRESSORS, Shell.h_compress),
     **dict.fromkeys(("export", "declare", "typeset", "local", "readonly"), Shell.h_assign),
+    **dict.fromkeys(REWRITERS, Shell.h_rewrite),
+    **dict.fromkeys(OUTPUT_SPECS, Shell.h_output),
     "eval": Shell.h_eval,
     "cd": Shell.h_cd,
     "pushd": Shell.h_cd,
@@ -1019,8 +1268,7 @@ HANDLERS = {
     "read": Shell.h_read,
     "mv": Shell.h_mv,
     "rm": Shell.h_rm,
-    "sed": Shell.h_in_place,
-    "perl": Shell.h_in_place,
+    "patch": Shell.h_patch,
     "dd": Shell.h_dd,
     "sort": Shell.h_sort,
     "tar": Shell.h_tar,

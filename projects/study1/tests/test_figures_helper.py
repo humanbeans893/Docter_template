@@ -391,6 +391,7 @@ def test_figures_are_credited_to_the_code_the_run_started_from(
 ):
     repo = tmp_path
     for name, text in {
+        ".gitignore": "__pycache__/\n*.py[cod]\n",  # as in the real repository
         "draft/chapters/ch.tex": "text\n",
         "projects/demo/src/analysis.py": "x = 1\n",
         "projects/other/result/figures/other-map.png": "old\n",

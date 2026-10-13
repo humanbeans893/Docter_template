@@ -50,10 +50,10 @@ docker compose exec research-template uv run python projects/<study>/experiments
 
 - **始める前の確認.** 同じ出力先で別の実行が動いていれば止まる(`out/.lock`)。完了した本実行があれば `--overwrite` が要る。記録の無いファイルが出力先にあっても `--overwrite` が要る。`running` のまま止まった記録(強制終了・メモリ不足・コンテナの作り直し)は、次の実行が片づける。`params.py` の `SEED`・`PARAMS`・`SMOKE` は、何かを消す前に確かめる。
 - **前の出力を消す.** 始めるときに、前の実行がその出力先に残したものを消す(`.gitkeep`・`.lock` と、本実行なら `smoke/` は残す)。`--overwrite` はここで前の `out/` を消すので、その実行が失敗しても前の `out/` は戻らない(`result/` は前のまま)。
-- **段階と記録.** `run.stage("…")` が段階の始まりを表示し、記録に時刻を残す。`out/params_used.json` は始め・各段階・終わりに書き直す: 状態(`running`・`completed`・`failed`)、シード、パラメータとそのハッシュ、開始時のコミットと未コミットのコードの一覧、`code_state`(`clean`・`uncommitted`・`changed_during_run`・`unknown`)、段階、`result/` に出したファイル(`promoted`)と消したファイル(`removed`)、失敗ならトレースバック。SIGTERM・SIGHUP・Ctrl-C で止めた実行は `failed` になる。
+- **段階と記録.** `run.stage("…")` が段階の始まりを表示し、記録に時刻を残す。`out/params_used.json` は始め・各段階・終わりに書き直す: 状態(`running`・`completed`・`failed`)、シード、パラメータとそのハッシュ、開始時のコミットと未コミットのコードの一覧、`code_state`(`clean`・`uncommitted`・`changed_during_run`・`unknown`)、段階、`result/` に出したファイル(`promoted`)と消したファイル(`removed`)、失敗ならトレースバック。SIGTERM・SIGHUP・Ctrl-C で止めた実行は `failed` になる。ただし公開がファイルを入れ替え始めた後に来た停止は、記録が `completed`(`promoted`・`removed` 入り)になるまで待ってから効く(終了コードは 130・143 のまま)。
 - **出力の場所.** `run.out("名前")` は `out/` の下の作業用のパス。外を指す名前や、`staged/`・記録・ロック(本実行では `smoke/` も)を指す名前は止まる。取り込み実験の照合の記録(`verify_inputs` のキャッシュ)は `data/interim/NNN_<slug>/` に置き、実行をまたいで使う。
 - **呼んだ時点の確認.** ヘルパーと `run.promote()` は、呼んだ時点で次を確かめて止まる(`--smoke` でも): 名前が `<study>-` で始まらない(W16)、同じ名前を1回の実行で2回書く、`result/` にある同じ名前の表・数値・ファイルと種類が違う、雛形(`_template`・`_import_template`)の本実行で書こうとした、`run.promote()` の行き先が `result/tables/` と `config.PROCESSED_DATA_DIR / run.name` の外。実験の `run.py` が `experiment.start()` の外でヘルパーを呼んでも止まる。
-- **公開.** 本実行が最後まで通ると、`out/staged/` の生成物を `result/` へまとめて入れる(全部か、何もしないか。公開の途中で強制終了しても、そのスタディの次の本実行が元に戻す)。同じ名前の前の生成物は丸ごと入れ替わり(別の形式で残っていた図も消える)、この実験が前に出して今回は出さなかった生成物も消える(記録の `removed`。Git から戻せる)。`data/processed/NNN_<slug>/` は、この実行がそこへ昇格したときだけ丸ごと入れ替わる。
+- **公開.** 本実行が最後まで通ると、`out/staged/` の生成物を `result/` へまとめて入れる(全部か、何もしないか。公開の途中で強制終了したら、そのスタディの次の本実行が始めに元に戻す。それまでは `result/.publication.json` が残り、`make check` が E12 で知らせるので、PDF を作る前に止まった実験をもう一度本実行する。`--smoke` では戻らない)。同じ名前の前の生成物は丸ごと入れ替わり(別の形式で残っていた図も消える)、この実験が前に出して今回は出さなかった生成物も消える(記録の `removed`。Git から戻せる)。`data/processed/NNN_<slug>/` は、この実行がそこへ昇格したときだけ丸ごと入れ替わる。
 - **コードの状態.** 由来記録のコミットは実行を始めたときのもの。未コミットのコードで始めた実行や、実行中にコードが変わった後に書いた生成物(`run.promote()` のファイルは公開する時点で確かめる)は `git_dirty: true` になり、警告が出る(`make check` の W15。提出前にコミットして作り直す)。実行中に同じスタディで新しい実験を作っても、コードが変わった扱いになる(`experiments/` の `.py` もコードに数える)ので、次に使う実験は長い本実行の前に作ってコミットしておく。
 - **同時に動かす.** 1つの実験の本実行と `--smoke` は同時に動かせる。同じ出力先の2つ目は止まる。ロックは1台(1つのコンテナ)の中でしか効かない(共有のファイルシステムの上で、別の計算機から同じ実験を動かさない)。
 - **作り直しの確認.** 提出前の作り直し(`python3 tools/thesis_check.py --list-generators`)は、実験を `--overwrite` 付きで、上流の実験から順に並べる。
@@ -73,7 +73,9 @@ docker compose exec research-template uv run python projects/<study>/experiments
 
 - どれも `<名前>.provenance.json` を横に書き、実験・スクリプト・開始時のコミット・実行(開始時刻・シード・パラメータのハッシュ)を記録する(`data/processed/` を除く)。`make check` はこれを読んで、撤回・中止・置き換えの実験や、まだ `進行中` の実験の生成物(W14)、未コミットのコードで作った生成物(W15)を知らせる。
 - 数値ファイルは `draft/values.tex` に一度登録し、本文では `\val{<study>-main-<キー>}` と書く。
+- 他の実験の `result/tables/*.csv` や `data/processed/NNN_<slug>/` を読んで作るものは、読んだファイルを `sources=[...]` で渡す: ヘルパーにも、`run.promote("<study>-derived.csv", sources=[csv_path])` にも(`run.promote()` は `result/tables/` に出すときだけ記録できる)。`make check` の W14 と `--list-generators` は、由来記録の `sources` から上流の実験をたどる。渡さないと、上流の実験を撤回しても W14 が出ず、作り直しの一覧から上流の実験が抜ける。
 - 図の体裁だけを直すコードは `src/`(例: `src/analysis/plots.py`)か `scripts/` の昇格スクリプトに置き、`result/tables/*.csv` や `data/processed/NNN_<slug>/` を読む。読んだファイルは `sources=[...]` で由来記録に残す(`make check` はそこから元の実験をたどる)。`scripts/` は実験の外なので、書いた生成物はすぐに `result/` に入る。完了した実験の `run.py` は直さない(条件を変えるなら新しい番号の実験にする)。
+- 論文で使わなくなった生成物(撤回・中止・置き換えにした実験のもの、完了した実験が出す診断用の図など)は `result/` に残してよい。公開が実験の前の生成物を入れ替え・消すのは、同じ実験をもう一度本実行したときだけ。`make check` は、どの文書にも入っていない生成した図を I5(情報。`--strict` でも失敗しない)で挙げるだけで、本文が使えば W14 が知らせる。提出前の作り直し(`--list-generators`)は、論文が使う生成物を作った実験とスクリプトだけを実行し直す。完了した実験が出す使わない図は、作り直すと同じ中身でもう一度出るので、手で消さず、`run.py` も直さない(消していると `git status` に `??` で出る)。撤回・中止・置き換えの実験は並ばないので、その生成物はコミットしたまま変わらない。記録として残すか、本文で使わなくなってから由来記録(`.provenance.json`)と一緒に `git rm` する(どのファイルかは由来記録の `experiment` 欄と `summary.md` の「昇格」で分かる。消す前にユーザーに確かめる)。
 
 ## 過去の結果を取り込む
 

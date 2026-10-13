@@ -17,7 +17,7 @@
 ## 実行の設計
 
 - [ ] 完了した本実行を残すなら新しい番号の実験にする(`--overwrite` は前の `out/` を始めに消す。`result/` は本実行が通るまで前のまま)。
-- [ ] 出力は `run.out()`・ヘルパー・`run.promote()` だけで書き、成果物のディレクトリに直接書かない。
+- [ ] 出力は `run.out()`・ヘルパー・`run.promote()` だけで書き、成果物のディレクトリに直接書かない。他の実験の `result/tables/*.csv` や `data/processed/NNN_<slug>/` を読むなら、ヘルパーと `run.promote()` に `sources=[...]` で渡している(渡さないと、上流を撤回しても `make check` の W14 が出ない)。
 - [ ] `--smoke` の段階ごとの所要時間から、本番の所要時間と資源を見積もった。
 - [ ] 長時間のジョブは、途中保存と再開を確かめてある。
 - [ ] 資源の要求(ノード・GPU・上限時間・ディスク)が見積もりと合っている。
@@ -27,4 +27,4 @@
 
 - [ ] 投入直後: そのスタディの `experiments/JOBS.md` に行を足し、`STATE.md` を更新した(`write-handoff` スキル。確認方法と結果の記録先まで書く)。
 - [ ] 完了後: 結果を `experiments/JOBS.md` に追記し、結論を `NNN_<slug>/summary.md` と索引の行に、経緯を `README.md` と `docs/research-log.md` に(同じコミットで)記録した。`STATE.md` の行を消した。
-- [ ] 失敗したとき: 失敗も記録として残した(`params_used.json` が `failed` なら、そのまま `--overwrite` なしで実行し直せる。コンテナの作り直しで止まった実行は `running` のまま残り、次の実行が片づける)。繰り返さない失敗なら `docs/guardrails.md` に1行足した。
+- [ ] 失敗したとき: 失敗も記録として残した(`params_used.json` が `failed` なら、そのまま `--overwrite` なしで実行し直せる。コンテナの作り直しで止まった実行は `running` のまま残り、次の実行が片づける。公開の途中で止まったら `make check` が E12 を出すので、`make pdf` の前にもう一度本実行して元に戻す)。繰り返さない失敗なら `docs/guardrails.md` に1行足した。
