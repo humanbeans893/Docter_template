@@ -1,41 +1,65 @@
 ---
 name: review-chapter
-description: Deep-review one thesis chapter (argument structure, methods-results consistency against the study's code and outputs, clarity) using parallel subagents, and write a dated report to docs/reviews/. Never edits the chapter itself.
+description: 博士論文の1章を、論証の構成・方法と結果の整合(スタディのコード・実験の索引・生成した CSV と照合)・明瞭さの観点から並列のサブエージェントで査読し、日付入りの報告を docs/reviews/ に書く。章そのものは編集しない
 ---
 
 # /review-chapter
 
-章を3つの観点から並列レビューし、日付入りレポートを `docs/reviews/` に書き出す。**章そのものは編集しない**(修正の採否はユーザーが決める)。
+章を3つの観点から並列に査読し、日付入りの報告を `docs/reviews/` に書き出します。**章そのものは編集しません**
+(直すかどうかはユーザーが決めます)。
 
-使い方: `/review-chapter chapters/02-study1.tex`(章ファイル指定。省略時はどの章かを確認する)
+使い方: `/review-chapter chapters/02-study1.tex`(章のファイルかラベルを指定。省略したら、どの章かを確かめる)
 
-## Steps
+## 手順
 
-### 1. 対象の特定と読み込み
+### 1. 対象を特定して読む
 
-- 章ファイルと対応するスタディを特定する(`draft/main.tex` の \include 構成と章番号から判断)
-- 以下を読む: 章本文全体 / `projects/<study>/scripts/`・`src/` の解析コード / `result/figures/`・`result/tables/` の生成物一覧 / `draft/notation.tex`
+- 章のファイルと対応するスタディを特定する(`draft/main.tex` の `\include` と `docs/thesis-plan.md` の章構成マップ)。
+- 次を読む。
+  - 章の本文全体と `draft/notation.tex`
+  - `docs/thesis-plan.md`(この章が答える RQ・主要な根拠)
+  - そのスタディの `projects/<study>/experiments/EXP_SUMMARY.md`(と `EXP_ARCHIVE.md`)、`docs/guardrails.md`
+  - 章の生成物の由来記録(`experiment` と `sources`)が指す実験の `summary.md`(方法を点検するときだけ
+    `README.md` と `run.py`)と、`projects/<study>/src/`・`scripts/`
+  - `projects/<study>/result/figures/`・`result/tables/` の生成物と、その `.provenance.json`
+  - `draft/values.tex` と、章が `\val` で使う値のファイル(`result/tables/<name>.tex` と `<name>.csv`)
+- `python3 tools/thesis_check.py --all` を実行し、この章に関係する所見(特に E8・W11・W14・W15・I3)を控える。
 
-### 2. 並列サブエージェントによるレビュー
+### 2. 並列のサブエージェントで査読する
 
-Task ツールで3系統のレビューを**並列**起動する。各エージェントには章全文と必要な文脈を渡し、Critical / Major / Minor のタグ付き所見(該当箇所の原文引用付き)を返させる:
+Task ツールで3系統の査読を**並列**に起動する。各エージェントには章の全文と必要な文脈を渡し、
+重大 / 要修正 / 軽微 の印と、該当箇所の原文の引用を付けた所見を返させる。
 
-1. **論証構成**: 各節が章の主張を前進させているか / IMRaD の流れ / 序論で立てた問いと結果・考察の対応 / 段落間の接続
-2. **手法-結果の整合**: 本文の全ての主張が実際のスクリプト・図表に遡れるか / 本文中の数値が生成された表・図と一致するか / 図表の参照順序 / 根拠の示されていない結果がないか
-3. **明瞭さと文体**: 曖昧・冗長な表現 / 時制の一貫性(例: Methods は過去形) / 用語・記号が `notation.tex` と一貫しているか
+1. **論証の構成**: 各節が章の主張を前に進めているか / 序論・方法・結果・考察の流れ / 冒頭で立てた問いと
+   結果・考察の対応 / 段落のつながり / 「Chapter Summary」が答えた RQ と次の章へのつながりを述べているか
+2. **方法と結果の整合**:
+   - 本文の主張のすべてが、実際のコード・実験・図表に遡れるか。根拠の示されていない結果が無いか
+   - 本文の数値が手で書かれていないか。`\val{…}` の各キーが値のファイルの CSV(`key,value,uncertainty`)の値と一致し、
+     本文の言い回し(増えた・減った、有意など)と矛盾しないか
+   - 主張が根拠の実験の `summary.md` の答えと「言えないこと」を越えていないか。根拠の実験の状態が
+     `撤回`・`中止`・`置き換え`・`進行中` でないか(索引と `summary.md`)。`docs/guardrails.md` の撤回した主張を
+     本文が言っていないか。そうした箇所をすべて挙げる
+   - R3 の生成物(そのまま載せた画像・書き写した数値)の一覧と、本文での扱い(出典・転載の許諾の記載)
+   - 図表の参照の順序、図表の説明と本文の一致
+3. **明瞭さと文体**: あいまい・冗長な表現 / 時制の一貫性(例: 方法は過去形) / 用語・記号が `notation.tex`・
+   略語一覧と一致しているか
 
 ### 3. 引用の過不足
 
-出典が必要なのに引用がない主張を列挙する。**引用を捏造しない** — 「ここに出典が必要」という指摘に留め、具体的な文献はユーザーか Zotero(/zotero-connect)で確認する。
+出典が必要なのに引用の無い主張を挙げる。**引用を捏造しない** — 「ここに出典が必要」という指摘にとどめ、
+具体的な文献はユーザーに確かめてもらう(候補を挙げるなら、DOI で原典を確かめたものだけ)。
 
-### 4. レポート作成
+### 4. 報告を書く
 
-`docs/reviews/YYYY-MM-DD-<chapter-slug>.md` に統合して書き出す:
+`docs/reviews/YYYY-MM-DD-<章の slug>.md` にまとめて書き出す。
 
 - 総評(3行以内)
-- Critical / Major / Minor 別の所見(「原文引用 → 修正案」の形式)
-- 不足アーティファクトのチェックリスト(未生成の図表・未整備のデータ台帳など)
+- 重大 / 要修正 / 軽微 ごとの所見(「原文の引用 → 修正案」の形)
+- 撤回・中止・置き換え・進行中の実験に頼っている主張の一覧(無ければ「なし」と書く)
+- 値の照合の結果(`\val` のキー、CSV の値、本文での使い方)
+- R3 の生成物の一覧
+- 足りないもののチェックリスト(未生成の図表、未登録の値のファイル、未整備の台帳など)
 
-### 5. 報告
+### 5. 報告する
 
-上位3件の課題をインラインで要約し、レポートのパスを示す。
+上位3件の課題をその場で要約し、報告のパスを示す。

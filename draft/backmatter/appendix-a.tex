@@ -2,4 +2,15 @@
 \label{app:a}
 
 % Appendix material (supplementary figures, tables, derivations).
-% Standalone supplementary documents can also be compiled from supplementary.tex.
+%
+% Appendices are the default home for the supplementary information of each study: one file
+% per study, added by hand,
+%   backmatter/appendix-<study>.tex   starting with   \chapter{Supplementary Information for <Study title>}
+%                                                    \label{app:<study>}
+% included after \appendix in main.tex (\include{backmatter/appendix-<study>}) and referred to
+% from the study chapter with \cref{app:<study>}. Figures and tables come from the study's
+% result/ directory exactly as in the chapters. When this general appendix stays empty, delete
+% it together with its \include line in main.tex.
+%
+% supplementary.tex builds a separate PDF only for material that cannot be bound into the
+% thesis; the main text never refers into it (see draft/README.md).

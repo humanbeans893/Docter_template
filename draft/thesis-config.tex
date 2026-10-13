@@ -52,3 +52,13 @@
 \else
   \ThesisFinalfalse
 \fi
+
+% review.tex defines \ThesisReviewBuild before loading main.tex: a supervisor/committee copy with
+% line numbers, wider spacing, hidden \todo notes and the build stamp.
+\newif\ifThesisReview
+\ifdefined\ThesisReviewBuild
+  \ThesisReviewtrue
+\else
+  \ThesisReviewfalse
+\fi
+\newcommand{\ThesisReviewLineSpacing}{2.0}

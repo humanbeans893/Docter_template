@@ -12,6 +12,14 @@ projects/**/data/processed/**
 !projects/**/data/processed/
 !projects/**/data/processed/.gitkeep
 
+# ============================
+# Experiment outputs (projects/<study>/experiments/NNN_<slug>/out/: the run record, staged/ and smoke/)
+# ============================
+# Scratch output of each run; what the thesis uses reaches result/ when a full run completes.
+projects/*/experiments/*/out/**
+!projects/*/experiments/*/out/
+!projects/*/experiments/*/out/.gitkeep
+
 # Optional project-specific data locations
 /raw/
 /datasets/
@@ -65,11 +73,6 @@ projects/**/result/**/animations/**
 !projects/**/result/**/animations/.gitkeep
 
 # ============================
-# Jupyter Notebook checkpoints
-# ============================
-.ipynb_checkpoints/
-
-# ============================
 # Environments
 # ============================
 .env
@@ -90,6 +93,7 @@ venv/
 # OS files
 # ============================
 .DS_Store
+._*
 Thumbs.db
 
 # ============================
@@ -98,7 +102,13 @@ Thumbs.db
 *.log
 .claude/settings.local.json
 .claude/sessions/
+.claude/worktrees/
+# Local MCP client settings and Codex project settings can carry API keys and other secrets.
 .mcp.json
+.codex/config.toml
+
+# Archived submissions (make archive TAG=...): PDFs, source.tar and manifests per tag.
+/dist/
 
 # External application state and literature attachments
 .external/
@@ -112,16 +122,20 @@ references/library/
 # ============================
 # Per-user shared memory
 # ============================
-memory
+/memory
 
 # ============================
-# LaTeX build artifacts (root and \include subdirectories)
+# LaTeX build artifacts
 # ============================
+# draft/compile.sh writes every intermediate to draft/build/ and moves only the PDFs back into
+# draft/. Hand-made figures in draft/figures/ (PDF included) stay committable.
+draft/build/
+draft/*.pdf
+# Safety net for a lualatex run inside draft/ (make clean-tex removes these files).
 draft/**/*.aux
 draft/**/*.bbl
 draft/**/*.blg
 draft/**/*.out
-draft/**/*.pdf
 draft/**/*.fls
 draft/**/*.fdb_latexmk
 draft/**/*.synctex.gz

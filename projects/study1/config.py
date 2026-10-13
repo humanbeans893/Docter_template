@@ -1,14 +1,21 @@
 """Configuration for a single study (self-contained).
 
 All paths resolve under THIS study directory, so a study can be copied or
-extracted without rewiring. Shared, study-independent constants
-(``GEO`` / ``RANDOM`` / ``VISUALIZATION``) are loaded from the repo-root
-``config.py`` by explicit file path: this module is itself imported as
-``config``, so a name-based ``from config import ...`` would be a circular
-self-import.
+extracted without rewiring. The two thesis-wide constants are loaded from the
+repo-root ``config.py`` by explicit file path (this module is itself imported
+as ``config``, so a name-based ``from config import ...`` would be a circular
+self-import): ``VISUALIZATION``, the figure appearance shared by all chapters
+(it never changes a number), and ``GEO``, physical constants. Any value that
+can change a result (the seed, data selection, thresholds, model settings)
+belongs in the experiment's ``params.py``, never here.
 
-To start a new study, copy the whole ``projects/_template/`` directory to
-``projects/<your-study-name>/``.
+Start a new study with ``make study`` (``tools/new_study.py``), which copies
+``projects/_template/`` and registers the study with the thesis build.
+
+``PROJECT_ROOT`` / ``DATA_ROOT`` / ``EXPERIMENTS_DIR`` repeat research-template's
+names for the same locations, so experiment code ported from a
+research-template repository finds them; ``EXP_DIR`` is the older
+research-template name of ``EXPERIMENTS_DIR``.
 """
 
 import importlib.util
@@ -25,7 +32,6 @@ _root_config = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_root_config)
 
 GEO = _root_config.GEO
-RANDOM = _root_config.RANDOM
 VISUALIZATION = _root_config.VISUALIZATION
 
 # --- Study-local paths (mirror the original single-study layout) ---
@@ -39,14 +45,25 @@ FIGURE_DIR = RESULT_DIR / "figures"
 TABLE_DIR = RESULT_DIR / "tables"
 ANIMATION_DIR = RESULT_DIR / "animations"
 
+# Numbered experiments (experiments/NNN_<slug>/), see experiments/README.md.
+EXPERIMENTS_DIR = STUDY_ROOT / "experiments"
+
+# research-template names for the same locations (EXP_DIR: its older name).
+PROJECT_ROOT = STUDY_ROOT
+DATA_ROOT = RAW_DATA_DIR
+EXP_DIR = EXPERIMENTS_DIR
+
 __all__ = [
     "ANIMATION_DIR",
     "DATA_DIR",
+    "DATA_ROOT",
+    "EXPERIMENTS_DIR",
+    "EXP_DIR",
     "FIGURE_DIR",
     "GEO",
     "INTERIM_DATA_DIR",
     "PROCESSED_DATA_DIR",
-    "RANDOM",
+    "PROJECT_ROOT",
     "RAW_DATA_DIR",
     "REPO_ROOT",
     "RESULT_DIR",

@@ -1,0 +1,35 @@
+% Generated values: study code writes them with write_latex_values into
+% projects/<study>/result/tables/<name>.tex; register each file below so every
+% value is defined before \begin{document} (the abstracts come before the chapters).
+% In the text: \val{<name>-<key>} (numbers typeset with siunitx \num),
+% \valqty{<name>-<key>}{<unit>} for a quantity, e.g. \valqty{study1-depth-max}{\metre},
+% and \rawval{...} for the bare string. A missing value inside \qty{\rawval{...}}{...}
+% stops even draft builds (siunitx: Invalid number); \valqty marks it instead.
+\newcommand{\defvalue}[2]{\expandafter\gdef\csname thesisvalue@#1\endcsname{#2}}
+\newcommand{\deftextvalue}[2]{\defvalue{#1}{#2}\expandafter\gdef\csname thesisvaluetext@#1\endcsname{}}
+\newcommand{\rawval}[1]{\ifcsname thesisvalue@#1\endcsname\csname thesisvalue@#1\endcsname\else\ThesisMissingValue{#1}\fi}
+\newcommand{\valqty}[2]{\ifcsname thesisvalue@#1\endcsname\qty{\csname thesisvalue@#1\endcsname}{#2}\else\ThesisMissingValue{#1}\fi}
+\newcommand{\val}[1]{%
+  \ifcsname thesisvalue@#1\endcsname
+    \ifcsname thesisvaluetext@#1\endcsname
+      \csname thesisvalue@#1\endcsname
+    \else
+      \num{\csname thesisvalue@#1\endcsname}%
+    \fi
+  \else
+    \ThesisMissingValue{#1}%
+  \fi}
+% \ThesisMissingValue and \ThesisValues: final build -> error; draft and review -> warning + marker.
+\ifThesisFinal
+  \newcommand{\ThesisMissingValue}[1]{\PackageError{thesis}{Undefined value `#1'}{Run the study script that writes it (write_latex_values) and register its file in draft/values.tex.}}
+  \newcommand{\ThesisValues}[1]{\InputIfFileExists{#1}{}{\PackageError{thesis}{Values file `#1' not found}{Run the study script that writes it.}}}
+\else
+  % Robust: in a heading or caption the marker reaches the .toc/.lof unexpanded. Expanded, a key
+  % with `_' (study names may contain it) is read back as a subscript and breaks the next run.
+  \DeclareRobustCommand{\ThesisMissingValue}[1]{\PackageWarning{thesis}{Undefined value `#1'}\textbf{??}\texttt{\detokenize{#1}}}
+  \newcommand{\ThesisValues}[1]{\InputIfFileExists{#1}{}{\PackageWarning{thesis}{Values file `#1' not generated yet}}}
+\fi
+% One line per generated values file (tools/new_study.py does not add these: add a line
+% when a study first calls write_latex_values). Path without .tex, relative to draft/.
+% \ThesisValues{../projects/study1/result/tables/study1-main}
+% thesis:values:end

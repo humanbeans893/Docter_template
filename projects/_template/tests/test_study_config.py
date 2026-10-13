@@ -20,5 +20,27 @@ def test_shared_constants_match_repo_root(study_cfg, study_root, load_module_by_
         study_root.parents[1] / "config.py", f"{study_root.name}_root_config_under_test"
     )
     assert study_cfg.GEO == root_cfg.GEO
-    assert study_cfg.RANDOM == root_cfg.RANDOM
     assert study_cfg.VISUALIZATION == root_cfg.VISUALIZATION
+
+
+def test_no_shared_value_can_change_a_result(study_cfg):
+    # The seed and every other value that can change a result are pinned in each
+    # experiment's params.py, so editing a shared config.py never changes a finished one.
+    for name in ("RANDOM", "SEED"):
+        assert not hasattr(study_cfg, name)
+        assert name not in study_cfg.__all__
+
+
+def test_research_template_names_alias_the_study_paths(study_cfg, study_root):
+    # Experiment code ported from a research-template repository uses these names.
+    assert study_cfg.PROJECT_ROOT == study_root
+    assert study_cfg.DATA_ROOT == study_cfg.RAW_DATA_DIR
+    assert study_cfg.EXPERIMENTS_DIR == study_root / "experiments"
+    assert study_cfg.EXP_DIR == study_cfg.EXPERIMENTS_DIR  # research-template's older name
+
+
+def test_both_experiment_templates_are_in_place(study_cfg):
+    for template in ("_template", "_import_template"):
+        for name in ("run.py", "summary.md"):
+            path = study_cfg.EXPERIMENTS_DIR / template / name
+            assert path.is_file(), f"experiments/{template}/{name} is missing"
