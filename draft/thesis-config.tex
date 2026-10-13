@@ -1,7 +1,7 @@
-% Dissertation metadata and university-dependent switches.
-% Keep all identifying and submission information in this file only.
+% Metadata and format switches of the dissertation: the only place to set them.
+% main.tex and supplementary.tex load this file before \documentclass.
 
-% --- Required metadata ------------------------------------------------------
+% --- Metadata (title page, abstracts, PDF properties) -----------------------------------------
 \newcommand{\ThesisTitleEN}{Dissertation Title}
 \newcommand{\ThesisTitleJA}{博士論文題目}
 \newcommand{\ThesisAuthorEN}{Author Name}
@@ -20,45 +20,34 @@
 \newcommand{\ThesisSubmissionDateJA}{2026年7月}
 \newcommand{\ThesisKeywordsEN}{keyword one; keyword two; keyword three}
 \newcommand{\ThesisKeywordsJA}{キーワード1；キーワード2；キーワード3}
+\newcommand{\ThesisStudentID}{}% optional: printed on the title page when not empty
 
-% Optional identifiers may be left empty.
-\newcommand{\ThesisStudentID}{}
-
-% --- University-specific page switches -------------------------------------
-\newif\ifThesisIncludeDeclaration
-\ThesisIncludeDeclarationfalse
+% --- Pages (true = printed) --------------------------------------------------------------------
 \newif\ifThesisIncludePublications
-\ThesisIncludePublicationsfalse
+\ThesisIncludePublicationstrue% list of publications (frontmatter/publications.tex)
+\newif\ifThesisPrintListOfFigures
+\ThesisPrintListOfFigurestrue
+\newif\ifThesisPrintListOfTables
+\ThesisPrintListOfTablestrue
+\newif\ifThesisIncludeDeclaration
+\ThesisIncludeDeclarationfalse% declaration of originality, when the university asks for one
 \newif\ifThesisIncludeAbbreviations
 \ThesisIncludeAbbreviationsfalse
 \newif\ifThesisIncludeSymbols
 \ThesisIncludeSymbolsfalse
-\newif\ifThesisPrintListOfFigures
-\ThesisPrintListOfFiguresfalse
-\newif\ifThesisPrintListOfTables
-\ThesisPrintListOfTablesfalse
 
-% --- Generic A4 defaults; replace these with the university requirements. --
+% --- Page layout (generic A4 defaults; follow the university's rules when it has them) --------
+% Class options: paper, font size, one- or two-sided (twoside,openright for double-sided print).
+\newcommand{\ThesisClassOptions}{a4paper,11pt,oneside}
 \newcommand{\ThesisMarginTop}{25mm}
 \newcommand{\ThesisMarginBottom}{25mm}
-\newcommand{\ThesisMarginInner}{30mm}
+\newcommand{\ThesisMarginInner}{30mm}% binding side
 \newcommand{\ThesisMarginOuter}{25mm}
 \newcommand{\ThesisLineSpacing}{1.5}
+\newcommand{\ThesisReviewLineSpacing}{2.0}% review copy (review.tex)
 
-% submission.tex defines \ThesisFinalBuild before loading main.tex.
-\newif\ifThesisFinal
-\ifdefined\ThesisFinalBuild
-  \ThesisFinaltrue
-\else
-  \ThesisFinalfalse
-\fi
-
-% review.tex defines \ThesisReviewBuild before loading main.tex: a supervisor/committee copy with
-% line numbers, wider spacing, hidden \todo notes and the build stamp.
+% --- Build mode: review.tex and submission.tex define these before loading main.tex ---------
 \newif\ifThesisReview
-\ifdefined\ThesisReviewBuild
-  \ThesisReviewtrue
-\else
-  \ThesisReviewfalse
-\fi
-\newcommand{\ThesisReviewLineSpacing}{2.0}
+\ifdefined\ThesisReviewBuild\ThesisReviewtrue\fi
+\newif\ifThesisFinal
+\ifdefined\ThesisFinalBuild\ThesisFinaltrue\fi

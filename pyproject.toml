@@ -1,22 +1,12 @@
 [project]
-name = "research-template"
+name = "doctoral-thesis"
 version = "0.1.0"
-description = "Reproducible multi-study research and doctoral dissertation template"
+description = "Doctoral thesis template that gathers research from separate research repositories"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-    "pandas>=2.0",
-    "numpy>=1.24",
-    "xarray>=2023.0",
-    "matplotlib>=3.7",
-    "geopandas>=0.14",
-    "shapely>=2.0",
-    "seaborn>=0.13",
-    "numba>=0.58",
-    "netCDF4>=1.6",
-    "scipy>=1.11",
-    "cartopy>=0.25.0",
-]
+# No analysis code runs here: experiments, figures and numbers come from the research
+# repositories. The container only runs pytest and ruff.
+dependencies = []
 
 [dependency-groups]
 dev = [
@@ -27,7 +17,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = [".cache", "projects/*/src/vendor"]
+extend-exclude = [".cache"]
 
 [tool.ruff.lint]
 # Full-width punctuation is normal in Japanese comments and strings.
@@ -40,31 +30,13 @@ select = [
     "UP",  # pyupgrade
     "B",   # bugbear
     "C4",  # comprehensions
-    "NPY", # numpy
-    "PD",  # pandas-vet
     "RUF", # ruff-specific
 ]
 
-[tool.ruff.lint.isort]
-# Study modules are imported by name after a sys.path bootstrap (config, params, src).
-known-first-party = ["config", "params", "src"]
-
-[tool.ruff.lint.per-file-ignores]
-# Scripts, experiments and tests insert the study root into sys.path before imports.
-"projects/*/scripts/**" = ["E402"]
-"projects/*/experiments/**" = ["E402"]
-# params.py imports config for its default SOURCE_DIR; the import is unused once SOURCE_DIR is None (only a publication survives) or under /external.
-"projects/*/experiments/*/params.py" = ["F401"]
-"projects/*/tests/**" = ["E402"]
-"tests/**" = ["E402"]
-
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["tests", "projects"]
-# importlib mode is load-bearing: every study ships identically named test modules
-# (tests/conftest.py, tests/test_study_config.py), and only importlib gives them unique
-# identities.
+testpaths = ["tests"]
+# importlib mode leaves sys.path alone: the tests load the tools by path (tests/conftest.py).
 addopts = "-ra --import-mode=importlib --strict-markers"
 # Keep the cache off the bind-mounted repository (AGENTS.md, environment rules).
 cache_dir = "$HOME/.cache/pytest"
-norecursedirs = ["data", "result", "out", "build", "vendor", ".cache", ".venv", "__pycache__"]

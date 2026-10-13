@@ -22,12 +22,39 @@ def test_detects_secret_and_large_file(tmp_path, checker):
     secret.write_text("token = " + "ghp_" + "abcdefghijklmnopqrstuvwxyz123456")
     large = tmp_path / "large.bin"
     large.write_bytes(b"x" * (checker.MAX_TRACKED_BYTES + 1))
+    # A figure copied from a research repo may be up to 10 MB; nowhere else in projects/.
+    figures = tmp_path / "projects" / "s1" / "figures"
+    figures.mkdir(parents=True)
+    figure = figures / "map.png"
+    figure.write_bytes(b"x" * (checker.MAX_TRACKED_BYTES + 1))
+    table = tmp_path / "projects" / "s1" / "tables" / "all.tex"
+    table.parent.mkdir()
+    table.write_bytes(b"x" * (checker.MAX_TRACKED_BYTES + 1))
+    huge_figure = figures / "huge.pdf"
+    huge_figure.write_bytes(b"x" * (checker.MAX_FIGURE_BYTES + 1))
 
-    findings = checker.scan_files([secret, large], root=tmp_path)
+    findings = checker.scan_files([secret, large, figure, table, huge_figure], root=tmp_path)
 
-    messages = {finding.message for finding in findings}
-    assert "possible GitHub token" in messages
-    assert any("exceeds" in message for message in messages)
+    assert ("notes.txt", "possible GitHub token") in {(f.path, f.message) for f in findings}
+    oversized = sorted(f.path for f in findings if "exceeds" in f.message)
+    assert oversized == [
+        "large.bin",
+        "projects/s1/figures/huge.pdf",
+        "projects/s1/tables/all.tex",
+    ]
+
+
+@pytest.mark.parametrize("name", ["external", "external/research-repo", "external/x/a.pdf"])
+def test_rejects_tracked_research_repositories(tmp_path, checker, name):
+    # external/<repo> is a local link to a research repo; only copies in projects/ reach git.
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x\n")
+
+    findings = checker.scan_files([path], root=tmp_path)
+
+    assert [f.path for f in findings] == [name]
+    assert "projects/<id>/" in findings[0].message
 
 
 def test_requires_sha_pinned_actions(tmp_path, checker):
@@ -94,26 +121,24 @@ def test_flags_windows_and_wsl_user_paths(tmp_path, checker):
         f"or {DRIVE_USERS}hanako/old\n",
         encoding="utf-8",
     )
-    sidecar = tmp_path / "fig1.provenance.json"
+    research = tmp_path / "research.json"
     escaped = WINDOWS_USERS.replace("\\", "\\\\")
-    sidecar.write_text(f'{{"sources": ["{escaped}jiro\\\\old\\\\a.csv"]}}\n', encoding="utf-8")
+    research.write_text(f'{{"source": "{escaped}jiro\\\\old\\\\repo"}}\n', encoding="utf-8")
 
-    findings = checker.scan_files([notes, sidecar], root=tmp_path)
+    findings = checker.scan_files([notes, research], root=tmp_path)
 
     flagged = sorted(f"{finding.path} {finding.message}" for finding in findings)
     assert len(flagged) == 4, flagged
     assert any("taro/" in message and "line 1" in message for message in flagged)
     assert any("taro\\" in message and "line 2" in message for message in flagged)
     assert any("hanako/" in message and "line 3" in message for message in flagged)
-    assert any(
-        message.startswith("fig1.provenance.json") and "jiro" in message for message in flagged
-    )
+    assert any(message.startswith("research.json") and "jiro" in message for message in flagged)
 
 
 def test_allows_container_home_urls_and_placeholders(tmp_path, checker):
     notes = tmp_path / "notes.md"
     notes.write_text(
-        f"HOME: {HOME}app\nMPLCONFIGDIR: {HOME}app/.cache/matplotlib\n"
+        f"HOME: {HOME}app\nXDG_CACHE_HOME: {HOME}app/.cache\n"
         f"https://example.org{HOME}someone/page\n"
         f"copy from {HOME}<user>/old-repo or <PATH>\n"
         f"~{HOME}x/ is relative\n"

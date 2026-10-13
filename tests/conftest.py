@@ -1,4 +1,4 @@
-"""Fixtures for repo-level tests (template integrity, shared config, tools)."""
+"""Fixtures for the repository tests (template integrity, tools)."""
 
 import importlib.util
 from pathlib import Path

@@ -2,33 +2,22 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(docker compose up:*)",
-      "Bash(docker compose ps:*)",
-      "Bash(docker compose top:*)",
-      "Bash(docker compose build:*)",
-      "Bash(docker compose exec research-template uv run:*)",
-      "Bash(docker compose exec -T research-template uv run:*)",
       "Bash(make:*)",
       "Bash(bash draft/compile.sh:*)",
       "Bash(python3 tools/thesis_check.py:*)",
-      "Bash(python3 tools/new_study.py:*)",
-      "Bash(python3 tools/new_experiment.py:*)",
       "Bash(python3 tools/public_repo_check.py:*)",
       "Bash(python3 tools/archive_thesis.py:*)",
-      "Bash(uvx pre-commit run:*)",
-      "Bash(rg:*)",
-      "Bash(find:*)",
-      "Bash(ls:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
-      "Bash(git branch:*)"
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)"
     ],
     "deny": [
-      "Edit(projects/**/data/raw/**)",
-      "Write(projects/**/data/raw/**)",
       "Read(.env)",
       "Read(.env.*)",
+      "Edit(external/**)",
+      "Write(external/**)",
       "Bash(python *)",
       "Bash(python3 -m venv*)",
       "Bash(python3 -m pip*)",
@@ -36,19 +25,6 @@
       "Bash(pip3 *)",
       "Bash(virtualenv *)",
       "Bash(uv *)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit|NotebookEdit|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect_raw_data.py; s=$?; if [ \"$s\" -ne 0 ] && [ \"$s\" -ne 2 ]; then echo \"BLOCKED: the raw-data hook (.claude/hooks/protect_raw_data.py) did not run (exit $s). Install python3 3.10 or newer on the host (README.md).\" >&2; s=2; fi; exit \"$s\""
-          }
-        ]
-      }
     ]
   }
 }

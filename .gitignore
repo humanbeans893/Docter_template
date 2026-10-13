@@ -1,33 +1,5 @@
 # ============================
-# Per-study raw / high-volume research data
-# ============================
-projects/**/data/raw/**
-!projects/**/data/raw/
-!projects/**/data/raw/**/
-!projects/**/data/raw/**/.gitkeep
-projects/**/data/interim/**
-!projects/**/data/interim/
-!projects/**/data/interim/.gitkeep
-projects/**/data/processed/**
-!projects/**/data/processed/
-!projects/**/data/processed/.gitkeep
-
-# ============================
-# Experiment outputs (projects/<study>/experiments/NNN_<slug>/out/: the run record, staged/ and smoke/)
-# ============================
-# Scratch output of each run; what the thesis uses reaches result/ when a full run completes.
-projects/*/experiments/*/out/**
-!projects/*/experiments/*/out/
-!projects/*/experiments/*/out/.gitkeep
-
-# Optional project-specific data locations
-/raw/
-/datasets/
-/input/
-/outputs/large/
-
-# ============================
-# Large file extensions
+# Large file extensions (data belongs to the research repositories, never to the thesis)
 # ============================
 *.nc
 *.h5
@@ -64,13 +36,6 @@ __pycache__/
 .local/
 .pytest_cache/
 .ruff_cache/
-
-# ============================
-# Heavy result artifacts
-# ============================
-projects/**/result/**/animations/**
-!projects/**/result/**/animations/
-!projects/**/result/**/animations/.gitkeep
 
 # ============================
 # Environments
@@ -110,14 +75,16 @@ Thumbs.db
 # Archived submissions (make archive TAG=...): PDFs, source.tar and manifests per tag.
 /dist/
 
-# External application state and literature attachments
+# external/<repo>: optional local links to the research repositories (read-only). What the
+# thesis uses is copied into projects/<id>/; external/ is never committed (make security fails
+# on it). No trailing slash: external may itself be a symlink.
+/external
+
+# External application state
 .external/
-external/
 zotero.sqlite*
 *.enl
 *.data/
-references/attachments/
-references/library/
 
 # ============================
 # Per-user shared memory

@@ -1,0 +1,13 @@
+{
+  "research": [
+    {
+      "id": "study1",
+      "title": "Study 1: Title",
+      "chapter": "draft/chapters/study1.tex",
+      "source": "",
+      "paper": "",
+      "paper_status": "",
+      "status": "構想"
+    }
+  ]
+}

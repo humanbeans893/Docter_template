@@ -17,40 +17,17 @@ services:
       UV_PROJECT_ENVIRONMENT: /opt/venv
       UV_CACHE_DIR: /opt/uv-cache
       XDG_CACHE_HOME: /home/app/.cache
-      MPLCONFIGDIR: /home/app/.cache/matplotlib
       # Keep import-time __pycache__ off the bind mount as well.
       PYTHONPYCACHEPREFIX: /home/app/.cache/pycache
       RUFF_CACHE_DIR: /home/app/.cache/ruff
-      # Print as it happens when stdout is not a terminal (docker compose exec -T, an agent,
-      # a log file), so a long run's stage progress shows while it runs, not at exit.
+      # Print as it happens when stdout is not a terminal (docker compose exec -T, an agent).
       PYTHONUNBUFFERED: "1"
     volumes:
-      # Tool state under HOME (shell history, downloaded map data, compiled
-      # caches) and the uv cache survive container re-creation.
+      # Tool state under HOME (shell history, compiled caches) and the uv cache
+      # survive container re-creation.
       - home:/home/app
       - uv-cache:/opt/uv-cache
       - .:/workspace
-      # Every study's raw data is also visible through `.:/workspace`. Overlay
-      # it read-only, so it cannot be modified from inside the container. The
-      # long syntax with create_host_path: false fails loudly when a study
-      # directory is missing instead of creating an empty root-owned one.
-      # tools/new_study.py adds one block per study above the end marker; keep
-      # the marker. Apply a new block with `make up` (this recreates the
-      # container: check for running jobs first).
-      - type: bind
-        source: ./projects/_template/data/raw
-        target: /workspace/projects/_template/data/raw
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./projects/study1/data/raw
-        target: /workspace/projects/study1/data/raw
-        read_only: true
-        bind:
-          create_host_path: false
-      # thesis:raw-mounts:end
-    shm_size: "16g"
     dns:
       - 8.8.8.8
       - 8.8.4.4

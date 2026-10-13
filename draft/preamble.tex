@@ -1,34 +1,32 @@
-% Preamble shared by the dissertation (loaded from main.tex).
-% Note: ltjsreport already loads luatexja, so we do not \usepackage{luatexja} here.
+% Packages and layout of the dissertation (loaded by main.tex). ltjsreport loads luatexja.
 \usepackage[nfssonly,haranoaji,scale=1]{luatexja-preset}
-\usepackage{graphicx}
-\usepackage{etoolbox}
 \usepackage[
   top=\ThesisMarginTop,
   bottom=\ThesisMarginBottom,
   inner=\ThesisMarginInner,
   outer=\ThesisMarginOuter
 ]{geometry}
-\setlength{\marginparwidth}{20mm}% todonotes needs a usable margin column
-\usepackage{amsmath, amssymb, array, bm}
-\usepackage{algorithmic,algorithm}
-\usepackage{float}
-\usepackage{booktabs}
-\usepackage{longtable}
-\usepackage{placeins}
-\usepackage{url}
-\usepackage[numbers,square,sort&compress]{natbib}
+% \todo notes: a 20mm column 2mm from the text fits in the default 25mm outer margin.
+\setlength{\marginparwidth}{20mm}
+\setlength{\marginparsep}{2mm}
+\usepackage{etoolbox}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{array,booktabs,longtable}
+\usepackage{float,placeins}
+\usepackage{algorithm,algorithmic}
 \usepackage{enumitem}
 \usepackage{setspace}
+\usepackage{url}
+\usepackage[numbers,square,sort&compress]{natbib}
+\usepackage{siunitx}
+\sisetup{uncertainty-mode = separate}% `0.82 +- 0.03` prints as 0.82 ± 0.03
 \usepackage{hyperref}
 \usepackage{bookmark}
 \usepackage{doi}
-\usepackage{siunitx}
-% Generated values with an uncertainty (`0.82 +- 0.03`) print as 0.82 ± 0.03.
-\sisetup{uncertainty-mode = separate}
 
-% --- Draft annotations: \todo notes show in the draft only; the review copy and the
-% submission hide them (todonotes' disable option keeps every \todo compiling). -----
+% --- Build modes (thesis-config.tex): \todo notes only in the draft; the review copy numbers
+% its lines (from the page after the title page) and uses wider spacing. ----------------------
 \ifThesisFinal
   \usepackage[disable]{todonotes}
 \else\ifThesisReview
@@ -36,25 +34,35 @@
 \else
   \usepackage[colorinlistoftodos,textsize=scriptsize]{todonotes}
 \fi\fi
-
-% --- Review copy: line numbers (from the page after the title page, where main.tex calls
-% \ThesisStartLineNumbers) and wider line spacing, so readers can point at a line. -----
 \ifThesisReview
   \usepackage[pagewise]{lineno}
   \newcommand{\ThesisStartLineNumbers}{\linenumbers}
-\else
-  \newcommand{\ThesisStartLineNumbers}{}
-\fi
-
-% --- Smart cross-references (\cref{fig:...}). Keep as the LAST package: it
-% must load after hyperref (and doi, which patches hyperref). ---------------
-\usepackage[capitalise,noabbrev]{cleveref}
-
-\ifThesisReview
   \setstretch{\ThesisReviewLineSpacing}
 \else
+  \newcommand{\ThesisStartLineNumbers}{}
   \setstretch{\ThesisLineSpacing}
 \fi
+
+% Smart cross-references (\cref). Load last: after hyperref and doi, which patches hyperref.
+\usepackage[capitalise,noabbrev]{cleveref}
+
+% --- Format ------------------------------------------------------------------------------------
+% Headings in the serif bold of the text (ltjsreport defaults to sans-serif gothic), chapter
+% titles single-spaced, and the English names and footnote marks (1, not *1).
+\renewcommand{\headfont}{\bfseries}
+\makeatletter
+\patchcmd{\@makechapterhead}{\normalfont}{\normalfont\setstretch{1}}{}{}
+\patchcmd{\@makeschapterhead}{\normalfont}{\normalfont\setstretch{1}}{}{}
+\makeatother
+\renewcommand{\figurename}{Figure~}
+\renewcommand{\appendixname}{Appendix~}
+\renewcommand{\thefootnote}{\arabic{footnote}}
+% Floats single-spaced: captions and tables stay compact in the 1.5-spaced text.
+\AtBeginEnvironment{figure}{\setstretch{1}}
+\AtBeginEnvironment{table}{\setstretch{1}}
+% References: a chapter-level list with an entry in the table of contents.
+\renewcommand{\bibname}{References}
+\renewcommand{\bibsection}{\chapter*{\bibname}\phantomsection\addcontentsline{toc}{chapter}{\bibname}}
 \clubpenalty=10000
 \widowpenalty=10000
 \displaywidowpenalty=10000
@@ -74,9 +82,8 @@
   \hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
 \fi\fi
 
-% --- Build stamp: compile.sh defines \ThesisBuildStamp (commit[-dirty] and date) for the
-% draft and the review copy, so every printed page says which version it is. The
-% submission has none. -----
+% --- Build stamp: compile.sh defines \ThesisBuildStamp (commit[-dirty] and date) for the draft
+% and the review copy, so every printed page says which version it is. ------------------------
 \ifThesisFinal\else
   \ifdefined\ThesisBuildStamp
     \ifThesisReview
@@ -84,33 +91,16 @@
     \else
       \newcommand{\ThesisStampText}{Draft \ThesisBuildStamp}
     \fi
-    \ifdefined\ThesisIncludeOnly
-      \edef\ThesisStampOnly{\detokenize\expandafter{\ThesisIncludeOnly}}
-      \appto\ThesisStampText{ (only \ThesisStampOnly)}
-    \fi
     \AddToHook{shipout/foreground}{%
       \put(20,-20){\makebox[0pt][l]{\scriptsize\ttfamily\ThesisStampText}}}
   \fi
 \fi
 
-\setlength{\abovecaptionskip}{0pt}
-\setlength{\belowcaptionskip}{0pt}
+% Figures: hand-made ones in draft/figures/ (ledger figures/README.md) and the research figures
+% in projects/<id>/figures/, written \includegraphics{<id>/figures/<name>}. Keep this on one
+% line (tools/thesis_check.py reads it; supplementary.tex has the same line).
+\graphicspath{{figures/}{../projects/}}
 
-% Resolve figures from each study's result/figures directory (single source of
-% truth — figures are regenerated by code, not copied here); figures/ holds only
-% hand-made figures listed in figures/README.md. Keep the graphicspath on ONE line:
-% tools/new_study.py appends {../projects/<study>/result/figures/} to it and the
-% checker reads it line by line (supplementary.tex has the same line). Figure
-% file names start with the study key (<study>-...): all directories share one
-% namespace.
-\graphicspath{{figures/}{../projects/study1/result/figures/}}
-
-% Bibliography heading at chapter level (report/book class uses \bibname).
-\renewcommand{\bibname}{References}
-
-% Thesis-wide notation macros. Conventions (label prefixes, citation keys,
-% figure naming) are documented in draft/README.md.
 \input{notation}
-
-% Numbers generated by the study code (\val{...}); keep this the last line of the preamble.
+% Numbers used in the text (\val{...}); keep this the last line of the preamble.
 \input{values}
