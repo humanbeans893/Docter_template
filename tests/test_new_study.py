@@ -110,6 +110,11 @@ def test_creates_the_study_and_registers_it(new_study, thesis_check, repo, capsy
     for area in ("src", "tests"):
         for path in (template / area).rglob("*.py"):
             assert (study / path.relative_to(template)).read_bytes() == path.read_bytes()
+    # tests/ starts with the study's own config test; the helpers are tested in tests/study_kit/.
+    assert sorted(path.name for path in (study / "tests").iterdir()) == [
+        "conftest.py",
+        "test_study_config.py",
+    ]
     for area in ("data", "result"):
         kept = {p.name for p in (study / area).rglob("*") if p.is_file()}
         assert kept <= {".gitkeep", "README.md"}, kept

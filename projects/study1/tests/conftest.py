@@ -1,10 +1,14 @@
-"""Shared fixtures for this study's tests.
+"""Shared fixtures for this study's own tests.
 
-Self-contained on purpose: no repo-root imports, so the study keeps testing
-cleanly after being copied or extracted from the monorepo. Modules are loaded
-by explicit file path under study-unique names because every study ships
-identically named ``config.py`` / ``src`` modules and the monorepo pytest run
-must not let them collide in ``sys.modules``.
+Tests here check what this study adds (its src/ and scripts/); test_study_config.py is the
+first one. The helpers in src/utils/ and the experiment templates are copies of
+projects/_template's and are tested once for every study in the repository's tests/study_kit/.
+
+Self-contained on purpose: no repo-root imports, so the study keeps testing cleanly after
+being copied or extracted from the monorepo. Load this study's modules with
+``load_module_by_path`` under study-unique names: every study ships identically named
+``config.py`` / ``src`` modules and the monorepo pytest run must not let them collide in
+``sys.modules``.
 """
 
 import importlib.util
@@ -37,31 +41,3 @@ def load_module_by_path():
 @pytest.fixture(scope="session")
 def study_cfg():
     return load_module(STUDY_ROOT / "config.py", f"{STUDY_ROOT.name}_config_under_test")
-
-
-@pytest.fixture(scope="session")
-def figures_mod():
-    return load_module(
-        STUDY_ROOT / "src" / "utils" / "figures.py", f"{STUDY_ROOT.name}_figures_under_test"
-    )
-
-
-@pytest.fixture(scope="session")
-def tables_mod():
-    return load_module(
-        STUDY_ROOT / "src" / "utils" / "tables.py", f"{STUDY_ROOT.name}_tables_under_test"
-    )
-
-
-@pytest.fixture(scope="session")
-def provenance_mod():
-    return load_module(
-        STUDY_ROOT / "src" / "utils" / "provenance.py",
-        f"{STUDY_ROOT.name}_provenance_under_test",
-    )
-
-
-@pytest.fixture(scope="session")
-def experiment_mod(figures_mod):
-    """src/utils/experiment.py as the helpers see it (one module per file per process)."""
-    return figures_mod._experiment

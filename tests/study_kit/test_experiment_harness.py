@@ -99,7 +99,7 @@ def _hidden(root: Path) -> list[str]:
 
 
 def _hermetic_study(tmp_path: Path, study_root: Path) -> Path:
-    """This study's config and src/ in a fresh repository layout (no git)."""
+    """projects/_template's config and src/ in a fresh repository layout (no git)."""
     repo = tmp_path / "copy"
     study = repo / "projects" / study_root.name
     study.mkdir(parents=True)

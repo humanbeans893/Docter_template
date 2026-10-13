@@ -410,12 +410,12 @@ def test_regeneration_check_in_the_docs_passes_when_nothing_changed(tables_mod, 
     assert "demo-main.tex" in check() and "demo-summary.csv" in check()
 
 
-def install_helper(repo: Path) -> Path:
-    """Commit tables.py (and the experiment.py it loads) into ``repo``'s demo study."""
+def install_helper(repo: Path, study_root: Path) -> Path:
+    """Commit study_root's tables.py (and the experiment.py it loads) into repo's demo study."""
     target = repo / "projects" / "demo" / "src" / "utils" / "tables.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     for name in ("tables.py", "experiment.py"):
-        source = Path(__file__).resolve().parents[1] / "src" / "utils" / name
+        source = study_root / "src" / "utils" / name
         shutil.copyfile(source, target.with_name(name))
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "helpers")
@@ -423,9 +423,11 @@ def install_helper(repo: Path) -> Path:
 
 
 @needs_git
-def test_a_commit_during_the_run_credits_the_start_commit(tmp_path, load_module_by_path, capsys):
+def test_a_commit_during_the_run_credits_the_start_commit(
+    tmp_path, study_root, load_module_by_path, capsys
+):
     repo = make_repo(tmp_path)
-    module = load_module_by_path(install_helper(repo), f"{tmp_path.name}_tables_run")
+    module = load_module_by_path(install_helper(repo, study_root), f"{tmp_path.name}_tables_run")
     start = head(repo)
     assert module.GIT_AT_START == {"git_commit": start, "git_dirty": False}
     demo = cfg_for(repo)
@@ -445,10 +447,10 @@ def test_a_commit_during_the_run_credits_the_start_commit(tmp_path, load_module_
 
 @needs_git
 def test_a_run_started_from_uncommitted_code_stays_dirty_after_a_commit(
-    tmp_path, load_module_by_path, capsys
+    tmp_path, study_root, load_module_by_path, capsys
 ):
     repo = make_repo(tmp_path)
-    target = install_helper(repo)
+    target = install_helper(repo, study_root)
     (repo / "projects" / "demo" / "src" / "analysis.py").write_text("x = 2\n")
     module = load_module_by_path(target, f"{tmp_path.name}_tables_dirty_start")
     start = head(repo)

@@ -98,4 +98,6 @@ docker compose exec research-template uv run python projects/study1/scripts/<ス
 docker compose exec research-template uv run pytest projects/study1
 ```
 
-`tests/` はスタディと一緒に持ち運べるテストで、複製した直後から通ります。`src/` に関数を足したら `tests/` にテストも足します。既存の `test_figures_helper.py` などが書き方の見本です。
+`tests/` はこのスタディ自身のコード(`src/` と `scripts/`)のテストを置く場所で、複製した直後から通ります。`src/` に関数を足したら `tests/` にテストも足します。最初の `test_study_config.py` が書き方の見本で、スタディのモジュールは `conftest.py` の `load_module_by_path` でファイルのパスから読み込みます(どのスタディも同じ名前の `config.py`・`src` を持つため)。
+
+`src/utils/` のヘルパーと実験の雛形は全スタディ共通で、テストはリポジトリの `tests/study_kit/` にあります。直すときは `projects/_template` で直して全スタディへ写します(`AGENTS.md` の「研究コード」)。

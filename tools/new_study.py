@@ -8,9 +8,9 @@
 
 It does, all or nothing:
   1. copies the skeleton of projects/_template/ to projects/NAME/ (code, documents,
-     experiment templates; no data, results or outputs), drops the template-only blocks
-     of its Markdown files and fills <study> / <Study title> in README.md,
-     data/README.md and experiments/;
+     experiment templates, the starter tests/; no data, results or outputs), drops the
+     template-only blocks of its Markdown files and fills <study> / <Study title> in
+     README.md, data/README.md and experiments/;
   2. writes draft/chapters/NN-NAME.tex from draft/chapters/_chapter-template.tex
      (NN = next creation number; the printed chapter order is main.tex's order);
   3. adds \\include{chapters/NN-NAME} above `% thesis:study-chapters:end` in draft/main.tex;
@@ -21,6 +21,10 @@ It does, all or nothing:
   6. adds a row for ch:NAME before the conclusion row of the chapter map in
      docs/thesis-plan.md.
 --no-chapter (a study whose results feed other chapters) skips 2, 3 and 6.
+
+The study's tests/ holds its own tests (test_study_config.py to start). The helpers in
+src/utils/ and the experiment templates stay copies of projects/_template's: they are
+tested once in tests/study_kit/, and tests/test_study_copies.py checks every copy.
 
 Every precondition is checked before anything is written; a failure while writing
 restores every file. --dry-run prints the plan and writes nothing. Stdlib only, so it
@@ -134,10 +138,14 @@ def show(path: Path, root: Path) -> str:
         return str(path)
 
 
-def skeleton_files(template_dir: Path, problems: list[str]) -> list[Path]:
-    """Files a new study starts with: code, documents and templates; no data or outputs."""
+def skeleton_files(template_dir: Path, problems: list[str], under: Path = Path()) -> list[Path]:
+    """Files a new study starts with: code, documents and templates; no data or outputs.
+
+    ``under`` walks only that part of ``template_dir``; the paths stay relative to
+    ``template_dir`` (tests/test_study_copies.py walks only a study's copied areas).
+    """
     files: list[Path] = []
-    for path in sorted(template_dir.rglob("*")):
+    for path in sorted((template_dir / under).rglob("*")):
         relative = path.relative_to(template_dir)
         parts = relative.parts
         if SKIP_DIRS.intersection(parts) or path.name in SKIP_NAMES:
@@ -428,13 +436,24 @@ def write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+def study_text(plan: Plan, relative: Path) -> str | None:
+    """The text projects/NAME/<relative> starts with; None for a file copied byte for byte.
+
+    tests/test_study_copies.py compares every study's helpers and experiment templates with
+    this, so they stay what this tool would copy today.
+    """
+    if relative.suffix == ".md" or fill_placeholders(relative):
+        return transform(relative, (plan.template_dir / relative).read_text(encoding="utf-8"), plan)
+    return None
+
+
 def build_study(plan: Plan, target: Path) -> None:
     for relative in plan.files:
         source = plan.template_dir / relative
         destination = target / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if relative.suffix == ".md" or fill_placeholders(relative):
-            text = transform(relative, source.read_text(encoding="utf-8"), plan)
+        text = study_text(plan, relative)
+        if text is not None:
             destination.write_text(text, encoding="utf-8")
             shutil.copymode(source, destination)
         else:
@@ -519,7 +538,8 @@ def main(argv: list[str] | None = None, *, root: Path = REPO_ROOT) -> int:
         "projects/*/experiments/JOBS.md),"
     )
     print(f"     then run `make up` (docker compose up -d) to mount {raw} read-only.")
-    print("  2. make test")
+    print(f"  2. make test (tests of the study's own code go to projects/{plan.name}/tests/;")
+    print("     its src/utils/ helpers and experiment templates are tested in tests/study_kit/)")
     if plan.chapter_number:
         print(
             f"  3. Fill in projects/{plan.name}/README.md and the ch:{plan.name} row of "

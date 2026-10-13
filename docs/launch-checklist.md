@@ -5,7 +5,7 @@
 ## 起動の前提(コードが最初に踏む地雷)
 
 - [ ] `run.py --smoke` を最後まで通した(`params.SMOKE` の小さな入力で同じコードを通す。設定の読み込み・必須の値・型の誤りは起動直後に落ちる)。
-- [ ] 関係するテストが通っている(`docker compose exec research-template uv run pytest projects/<study>`)。
+- [ ] 関係するテストが通っている(`docker compose exec research-template uv run pytest projects/<study>`。ヘルパーや実験の雛形を直したなら `tests/study_kit/` と `tests/test_study_copies.py` も)。
 - [ ] 必要な入力データと上流の成果物がすべてあり、パスが解決できる。過去の結果を使うなら `verify_inputs` の照合が通る。
 
 ## 再現性

@@ -6,9 +6,15 @@ budgets and their index rows stay short, every study's experiment directories ma
 index one to one, each experiment's card (summary.md) is short and says the status of its
 index row, the experiment procedure is the same in every study, both agents can load the
 skills and the mirrored ones agree (write-handoff asks for an import's open steps only while
-it is open, thesis-check explains every finding code of tools/thesis_check.py), the docs use
-this repository's conventions instead of research-template's, and experiment outputs stay
-out of git.
+it is open, thesis-check explains every finding code of tools/thesis_check.py), removed
+features and research-template's conventions stay out, and experiment outputs stay out of
+git.
+
+The docs are checked for facts (a file, a table, a status word, a code), never for their
+wording: rephrasing a sentence must not fail a test. The files every study must contain are
+listed once, in tests/test_template_integrity.py; the copies of projects/_template's helpers
+and experiment templates are compared in tests/test_study_copies.py, so the checks of those
+templates here read projects/_template only.
 """
 
 import importlib.util
@@ -23,10 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 STUDIES = sorted(path.parent for path in (ROOT / "projects").glob("*/config.py"))
 
 
-def _load_thesis_check():
-    """tools/thesis_check.py, whose W14 reads the same status words this file checks."""
+def _load_tool(name: str):
     spec = importlib.util.spec_from_file_location(
-        "thesis_check_for_repo_structure", ROOT / "tools" / "thesis_check.py"
+        f"{name}_for_repo_structure", ROOT / "tools" / f"{name}.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -34,12 +39,17 @@ def _load_thesis_check():
     return module
 
 
-_thesis_check = _load_thesis_check()
+# tools/thesis_check.py, whose W14 reads the same status words this file checks.
+_thesis_check = _load_tool("thesis_check")
 # The status words (AGENTS.md 実験), defined once in tools/thesis_check.py: the index's 状態
 # cell and the card's 状態 line start with one of them.
 STATUSES = _thesis_check.STATUS_WORDS
 status_word = _thesis_check.status_word
 OPEN = _thesis_check.OPEN_STATUS
+# tools/new_experiment.py appends each new experiment's row to the table under this header.
+_new_experiment = _load_tool("new_experiment")
+INDEX_COLUMNS = _new_experiment.HEADER
+table_cells = _new_experiment.table_cells
 
 HANDOFF_DOCUMENTS = (
     "AGENTS.md",
@@ -54,17 +64,7 @@ HANDOFF_DOCUMENTS = (
     "docs/feedback/_template.md",
 )
 EXPERIMENT_TEMPLATES = ("_template", "_import_template")
-STUDY_EXPERIMENT_FILES = (
-    "experiments/README.md",
-    "experiments/EXP_SUMMARY.md",
-    "experiments/EXP_ARCHIVE.md",
-    "experiments/JOBS.md",
-    *(
-        f"experiments/{template}/{name}"
-        for template in EXPERIMENT_TEMPLATES
-        for name in ("README.md", "summary.md", "run.py", "params.py", "out/.gitkeep")
-    ),
-)
+TEMPLATE_STUDY = ROOT / "projects" / "_template"
 
 # Character budgets of the files read at the start of every session (AGENTS.md,
 # セッション状態と引き継ぎ). Characters, not lines: long lines defeat a line count.
@@ -79,7 +79,7 @@ INDEX_ROW_MAX_CHARS = 200
 
 # The experiment index (EXP_SUMMARY.md) and its archive (EXP_ARCHIVE.md) share one table.
 INDEX_FILES = ("EXP_SUMMARY.md", "EXP_ARCHIVE.md")
-INDEX_HEADER = "| # | slug | 一行で | 状態 | 論文 | 由来 |"
+INDEX_HEADER = "| " + " | ".join(INDEX_COLUMNS) + " |"
 INDEX_SEPARATOR = re.compile(r"\|(?:\s*:?-{3,}:?\s*\|){6}")
 INDEX_ROW = re.compile(r"^\|\s*[0-9]+\s*\|")
 EXPERIMENT_NAME = re.compile(r"[0-9]{3}_[a-z0-9]+(?:_[a-z0-9]+)*")
@@ -92,18 +92,16 @@ OPEN_IMPORT_STATUSES = (OPEN, "中止")
 CARD = "summary.md"
 CARD_MAX_LINES = 50
 CARD_MAX_CHARS = 3_000
-CARD_STATUS = re.compile(r"^- \*\*状態\*\*:(.*)$", re.MULTILINE)
+# The card's status field, `- **状態**: <word>` in the template; emphasis and a full-width
+# colon are accepted, the field name is what counts.
+CARD_STATUS = re.compile(r"^[-*][ \t]+(?:\*\*)?状態(?:\*\*)?[ \t]*[::](.*)$", re.MULTILINE)
 PLACEHOLDER = re.compile(r"<[^<>\n]+>")
-OPEN_STEPS = re.compile(r"^## 残りの手順\s*$", re.MULTILINE)
+# The import's checklist heading (experiments/_import_template/summary.md), at any level.
+OPEN_STEPS = re.compile(r"^#{1,6}[ \t]*残りの手順", re.MULTILINE)
 
 # Claude Code reads .claude/skills/, Codex reads .agents/skills/.
 SKILL_DIRS = (ROOT / ".claude" / "skills", ROOT / ".agents" / "skills")
 MIRRORED_SKILLS = ("write-handoff", "import-results", "thesis-check", "research-log")
-
-# research-template conventions that do not exist here (AGENTS.md, 単一の正本): decision
-# records are docs/decisions/NNNN-<slug>.md from _adr-template.md, research logs are entries
-# in docs/research-log.md, and there is no docs/templates/.
-FOREIGN_CONVENTIONS = re.compile(r"decision-(?:NNN|[0-9]{3})|docs/templates/")
 
 
 def rel(path: Path) -> str:
@@ -117,20 +115,9 @@ def study_id(study: Path) -> str:
     return study.name
 
 
-def test_every_study_is_found() -> None:
-    names = [study.name for study in STUDIES]
-    assert "_template" in names, f"projects/_template/config.py is missing (found {names})"
-
-
 def test_handoff_documents_exist() -> None:
     missing = [path for path in HANDOFF_DOCUMENTS if not (ROOT / path).is_file()]
     assert not missing, f"Missing handoff documents: {missing}"
-
-
-@pytest.mark.parametrize("study", STUDIES, ids=study_id)
-def test_study_has_the_experiment_skeleton(study: Path) -> None:
-    missing = [path for path in STUDY_EXPERIMENT_FILES if not (study / path).is_file()]
-    assert not missing, f"projects/{study.name} is missing {missing} (copy them from _template)"
 
 
 @pytest.mark.parametrize(
@@ -166,7 +153,8 @@ def index_rows(path: Path) -> list[list[str]]:
     """Cells of each experiment row of the one table in an index file; asserts its shape."""
     name = rel(path)
     lines = path.read_text(encoding="utf-8").splitlines()
-    headers = [n for n, line in enumerate(lines) if line.strip() == INDEX_HEADER]
+    # The header as tools/new_experiment.py finds it: the same cells, spacing free.
+    headers = [n for n, line in enumerate(lines) if table_cells(line) == INDEX_COLUMNS]
     assert len(headers) == 1, (
         f"{name} must contain the header line `{INDEX_HEADER}` exactly once "
         f"(found {len(headers)}): tools/new_experiment.py appends rows to that table"
@@ -346,10 +334,10 @@ def test_each_card_is_short_and_agrees_with_its_index_row(study: Path) -> None:
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.parametrize("study", STUDIES, ids=study_id)
-def test_template_cards_start_open_and_fit(study: Path) -> None:
+def test_template_cards_start_open_and_fit() -> None:
+    # Every study's template cards are copies of these (tests/test_study_copies.py).
     for template in EXPERIMENT_TEMPLATES:
-        path = study / "experiments" / template / CARD
+        path = TEMPLATE_STUDY / "experiments" / template / CARD
         assert not card_size_problems(path), card_size_problems(path)
         lines = CARD_STATUS.findall(path.read_text(encoding="utf-8"))
         assert len(lines) == 1 and status_word(lines[0]) == OPEN, (
@@ -359,12 +347,12 @@ def test_template_cards_start_open_and_fit(study: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "study", [study for study in STUDIES if study.name != "_template"], ids=study_id
+    "study", [study for study in STUDIES if study != TEMPLATE_STUDY], ids=study_id
 )
 def test_experiment_readmes_are_the_same_in_every_study(study: Path) -> None:
     # The procedure and the harness behaviour are written once (AGENTS.md 実験 holds the rules):
     # every study's copy is projects/_template's with the study name filled in.
-    template = ROOT / "projects" / "_template" / "experiments" / "README.md"
+    template = TEMPLATE_STUDY / "experiments" / "README.md"
     expected = template.read_text(encoding="utf-8").replace("<study>", study.name)
     path = study / "experiments" / "README.md"
     assert path.read_text(encoding="utf-8") == expected, (
@@ -385,7 +373,7 @@ def fake_study(tmp_path: Path) -> Path:
     """A study with this repository's template cards and an empty archive."""
     study = tmp_path / "s1"
     for template in EXPERIMENT_TEMPLATES:
-        card = ROOT / "projects" / "_template" / "experiments" / template / CARD
+        card = TEMPLATE_STUDY / "experiments" / template / CARD
         target = study / "experiments" / template / CARD
         target.parent.mkdir(parents=True)
         shutil.copy2(card, target)
@@ -413,6 +401,9 @@ def test_index_checks_reject_unknown_words_and_open_imports(fake_study: Path) ->
     }
     index = fake_study / "experiments" / "EXP_SUMMARY.md"
     write_index(index, list(rows.values()))
+    # The header is found by its cells, as tools/new_experiment.py finds it.
+    compact = "|" + "|".join(INDEX_COLUMNS) + "|"
+    index.write_text(index.read_text("utf-8").replace(INDEX_HEADER, compact), encoding="utf-8")
 
     problems = index_problems(index)
 
@@ -426,6 +417,9 @@ def test_card_checks_reject_disagreeing_long_and_unfinished_cards(fake_study: Pa
     template_card = (experiments / "_template" / CARD).read_text(encoding="utf-8")
     import_card = (experiments / "_import_template" / CARD).read_text(encoding="utf-8")
     finished = "# {name}: 問い\n\n- **状態**: {status}\n\n## 答え\n\n言えること。\n"
+    # An abandoned import (`中止 | — | 取り込み`, accepted by the index check) loses
+    # `## 残りの手順` like any closed one: the section stays only while the import is 進行中.
+    steps = "\n## 残りの手順\n\n- [ ] 過去のファイルを利用者がコピーした\n"
     cards = {
         "001_done": ("完了", finished.format(name="001_done", status="完了")),
         "002_stale": ("完了", template_card),  # still 進行中 in the card
@@ -442,6 +436,13 @@ def test_card_checks_reject_disagreeing_long_and_unfinished_cards(fake_study: Pa
         ),
         "008_twice": ("完了", finished.format(name="008_twice", status="完了") * 2),
         "009_old_word": ("置換(→001)", finished.format(name="009_old_word", status="置換")),
+        # the field name counts, not its emphasis or the width of the colon
+        "010_plain": ("完了", "# 010_plain: 問い\n\n- 状態:完了\n"),
+        "011_dropped": ("中止", finished.format(name="011_dropped", status="中止")),
+        "012_dropped_steps": (
+            "中止",
+            finished.format(name="012_dropped_steps", status="中止") + steps,
+        ),
     }
     rows = []
     for name, (status, text) in cards.items():
@@ -456,7 +457,7 @@ def test_card_checks_reject_disagreeing_long_and_unfinished_cards(fake_study: Pa
     def about(name: str) -> list[str]:
         return [problem for problem in problems if f"/{name}/{CARD}" in problem]
 
-    for name in ("001_done", "003_withdrawn", "006_open"):
+    for name in ("001_done", "003_withdrawn", "006_open", "010_plain", "011_dropped"):
         assert not about(name), about(name)
     assert any("must start with the word of its index row" in p for p in about("002_stale"))
     assert any("placeholders remain" in p for p in about("004_unfilled"))
@@ -465,33 +466,15 @@ def test_card_checks_reject_disagreeing_long_and_unfinished_cards(fake_study: Pa
     assert any("move detail to README.md" in p for p in about("007_long"))
     assert any("exactly one" in p for p in about("008_twice"))
     assert any("must start with the word" in p for p in about("009_old_word"))
-
-
-def test_a_stopped_import_keeps_its_origin_but_not_its_open_steps(fake_study: Path) -> None:
-    # An abandoned import reads `中止 | — | 取り込み`; its card loses ## 残りの手順 like any
-    # closed import (the section stays only while the import is 進行中).
-    experiments = fake_study / "experiments"
-    card = "# {name}: 問い\n\n- **状態**: 中止\n\n## 答え\n\n取り込まなかった理由。\n"
-    steps = "\n## 残りの手順\n\n- [ ] 過去のファイルを利用者がコピーした\n"
-    rows = []
-    for name, text in {"001_dropped": card, "002_kept_steps": card + steps}.items():
-        (experiments / name).mkdir()
-        (experiments / name / CARD).write_text(text.format(name=name), encoding="utf-8")
-        number, slug = name.split("_", 1)
-        rows.append(f"| {number} | {slug} | x | 中止 | — | {OPEN_IMPORT} |")
-    index = experiments / "EXP_SUMMARY.md"
-    write_index(index, rows)
-
-    assert not index_problems(index), index_problems(index)
-    problems = card_problems(fake_study)
-    assert len(problems) == 1, problems
-    assert "/002_kept_steps/" in problems[0] and "残りの手順" in problems[0], problems
+    assert len(about("012_dropped_steps")) == 1, about("012_dropped_steps")
+    assert "残りの手順" in about("012_dropped_steps")[0]
 
 
 def test_handoff_asks_for_open_steps_only_while_an_import_is_open() -> None:
     # write-handoff once asked for 残りの手順 on every row whose 由来 is 取り込み, so an agent put
     # the section back on a stopped import and card_problems failed (above). Every instruction
-    # of the skill about an import's 残りの手順 names the open status.
+    # of the skill about an import's 残りの手順 names the open status word; how the sentence
+    # says it is free.
     for directory in SKILL_DIRS:
         path = directory / "write-handoff" / "SKILL.md"
         body = path.read_text(encoding="utf-8")
@@ -506,14 +489,16 @@ def test_handoff_asks_for_open_steps_only_while_an_import_is_open() -> None:
         )
 
 
-def test_template_study_has_no_experiments() -> None:
+def test_template_study_exists_and_has_no_experiments() -> None:
     # make study copies projects/_template: experiments there would leak into every new study.
-    template = ROOT / "projects" / "_template"
-    dirs = [path.name for path in experiment_dirs(template)]
+    assert TEMPLATE_STUDY in STUDIES, (
+        f"projects/_template/config.py is missing (studies found: {[s.name for s in STUDIES]})"
+    )
+    dirs = [path.name for path in experiment_dirs(TEMPLATE_STUDY)]
     rows = [
         indexed_name(row)
         for index in INDEX_FILES
-        for row in index_rows(template / "experiments" / index)
+        for row in index_rows(TEMPLATE_STUDY / "experiments" / index)
     ]
     assert not dirs and not rows, (
         f"projects/_template/experiments must stay empty (directories {dirs}, index rows {rows})"
@@ -590,35 +575,93 @@ def test_thesis_check_skill_explains_every_finding_code() -> None:
         )
 
 
-def convention_scanned_files() -> list[Path]:
-    files = [ROOT / name for name in ("AGENTS.md", "README.md", "STATE.md")]
-    files += sorted((ROOT / "docs").rglob("*.md"))
+def documents() -> list[Path]:
+    """What people and agents read: the guides, the skills, .env.example, and every study's
+    Markdown and experiment code (raw data, run outputs and caches excluded)."""
+    found = {
+        ROOT / name
+        for name in ("AGENTS.md", "CONTRIBUTING.md", "README.md", "STATE.md", ".env.example")
+    }
+    for pattern in (
+        "docs/**/*.md",
+        "draft/**/*.md",
+        "projects/**/*.md",
+        "projects/*/experiments/**/*.py",
+    ):
+        found.update(ROOT.glob(pattern))
     for directory in SKILL_DIRS:
-        files += sorted(directory.rglob("*.md"))
-    for study in STUDIES:
-        experiments = study / "experiments"
-        files += sorted(
-            path
-            for path in experiments.rglob("*")
-            if path.is_file()
-            and path.suffix in {".md", ".py"}
-            and not {"out", "__pycache__"} & set(path.relative_to(experiments).parts)
-        )
-    return [path for path in files if path.is_file()]
+        found.update(directory.rglob("*.md"))
+    skipped = {"raw", "out", "__pycache__", ".venv"}
+    return sorted(
+        path for path in found if path.is_file() and not skipped & set(path.relative_to(ROOT).parts)
+    )
 
 
-def test_docs_use_this_repositorys_conventions() -> None:
+# The import guide, skill and template describe old research-template repositories, whose
+# experiments lived in exp/ (docs/importing-past-results.md).
+IMPORT_MATERIAL = (
+    "docs/importing-past-results.md",
+    ".claude/skills/import-results/SKILL.md",
+    ".agents/skills/import-results/SKILL.md",
+    "projects/*/experiments/_import_template/README.md",
+)
+
+REMOVED_NAMES = [
+    # It wrote project state to Claude's memory and the git-ignored .claude/sessions/, which
+    # Codex and other clones cannot read.
+    pytest.param(
+        (".claude/skills/session-save", ".agents/skills/session-save"),
+        re.compile("session-save"),
+        (),
+        "The session-save skill was removed: hand off with write-handoff (STATE.md)",
+        id="session-save",
+    ),
+    # AGENTS.md, 単一の正本.
+    pytest.param(
+        ("docs/templates",),
+        re.compile(r"decision-(?:NNN|[0-9]{3})|docs/templates/"),
+        (),
+        "research-template conventions do not exist here: decision records are "
+        "docs/decisions/NNNN-<slug>.md from _adr-template.md, research logs are entries in "
+        "docs/research-log.md, and there is no docs/templates/",
+        id="research-template-conventions",
+    ),
+    # The container runs no notebook server and publishes no ports
+    # (tests/test_runtime_constraints.py keeps Jupyter out of the container files).
+    pytest.param(
+        (),
+        re.compile(r"JUPYTER_PORT"),
+        (),
+        "There is no Jupyter server and the container publishes no ports: JUPYTER_PORT was removed",
+        id="jupyter-port",
+    ),
+    # Only ASCII word characters, . / and - before exp/ keep it out: 旧exp/ is caught,
+    # results/exp/ and regexp/ are not.
+    pytest.param(
+        (),
+        re.compile(r"(?<![A-Za-z0-9_./-])exp/"),
+        IMPORT_MATERIAL,
+        "A study's experiments live in projects/<study>/experiments/: exp/ is named only as the "
+        "layout of old research-template repositories, in the import guide, skill and template",
+        id="exp-directory",
+    ),
+]
+
+
+@pytest.mark.parametrize(("paths", "pattern", "allowed", "why"), REMOVED_NAMES)
+def test_removed_names_stay_out_of_the_documents(
+    paths: tuple[str, ...], pattern: re.Pattern[str], allowed: tuple[str, ...], why: str
+) -> None:
+    back = [f"{path} exists" for path in paths if (ROOT / path).exists()]
+    exempt = {path for glob in allowed for path in ROOT.glob(glob)}
     found = [
         f"{rel(path)}:{number}: {match.group(0)}"
-        for path in convention_scanned_files()
+        for path in documents()
+        if path not in exempt
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        for match in FOREIGN_CONVENTIONS.finditer(line)
+        if (match := pattern.search(line))
     ]
-    assert not found, (
-        "research-template conventions that do not exist here (decision records are "
-        "docs/decisions/NNNN-<slug>.md from _adr-template.md, research logs are entries in "
-        "docs/research-log.md, there is no docs/templates/):\n" + "\n".join(found)
-    )
+    assert not back and not found, f"{why}:\n" + "\n".join(back + found)
 
 
 def git_work_tree() -> bool:
