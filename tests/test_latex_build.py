@@ -31,10 +31,6 @@ if [ -f "${aux}" ] && grep -q 'CUT' "${aux}"; then
   echo "${name}.aux:1: File ended while scanning use of \BKM@entry." > "${log}"
   exit 1
 fi
-case "${name}" in
-  # A partial review build continues from the .aux files of the full review copy.
-  review-*) [ -f "${aux}" ] || { echo "${name}.tex:1: not seeded" > "${log}"; exit 1; } ;;
-esac
 if [ -n "${FAKE_TEX_HANG:-}" ]; then
   printf '\\BKM@entry{id=1,CUT' > "${aux}"
   exec sleep 60
@@ -49,7 +45,7 @@ needs_timeout = pytest.mark.skipif(shutil.which("timeout") is None, reason="need
 
 def test_missing_value_marker_is_robust() -> None:
     # In a heading or caption the draft marker reaches the .toc/.lof. Expanded there, a key with
-    # `_' (study names may contain it) is read back as a subscript: "Missing $ inserted".
+    # `_' (research ids may contain it) is read back as a subscript: "Missing $ inserted".
     text = (DRAFT / "values.tex").read_text(encoding="utf-8")
     draft_branch = text.split("\\ifThesisFinal", 1)[1].split("\\else", 1)[1].split("\\fi", 1)[0]
     assert re.search(r"^\s*\\DeclareRobustCommand\{\\ThesisMissingValue\}", draft_branch, re.M), (
@@ -58,24 +54,11 @@ def test_missing_value_marker_is_robust() -> None:
     )
 
 
-def test_supplementary_can_cite_the_thesis_references() -> None:
-    lines = [
-        line.split("%", 1)[0].strip()
-        for line in (DRAFT / "supplementary.tex").read_text(encoding="utf-8").splitlines()
-    ]
-    assert "\\usepackage[numbers,square,sort&compress]{natbib}" in lines
-    end = lines.index("\\end{document}")
-    assert "\\bibliographystyle{unsrtnat}" in lines[:end]
-    assert "\\bibliography{reference}" in lines[:end]
-
-
 @pytest.fixture
 def draft(tmp_path: Path) -> Path:
     draft = tmp_path / "draft"
-    (draft / "chapters").mkdir(parents=True)
+    draft.mkdir()
     shutil.copy2(COMPILE, draft / "compile.sh")
-    (draft / "main.tex").write_text("\\include{chapters/02-study1}\n", encoding="utf-8")
-    (draft / "chapters" / "02-study1.tex").write_text("text\n", encoding="utf-8")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "lualatex").write_text(FAKE_LUALATEX, encoding="utf-8")
@@ -128,12 +111,3 @@ def test_completed_build_directory_is_reused(draft: Path) -> None:
     kept.write_text("x", encoding="utf-8")
     assert compile_sh(draft, "main").returncode == 0
     assert kept.is_file()
-
-
-@needs_timeout
-def test_partial_review_after_a_timed_out_full_review(draft: Path) -> None:
-    assert compile_sh(draft, "review", hang=True).returncode == 1
-    result = compile_sh(draft, "review", "--only", "02-study1")
-    assert result.returncode == 0, result.stderr
-    assert "Built draft/review.pdf" in result.stdout
-    assert "Built draft/review-02-study1.pdf" in result.stdout

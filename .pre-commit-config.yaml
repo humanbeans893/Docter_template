@@ -15,7 +15,12 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
-        args: [--maxkb=1024] # data guard: nothing over 1 MB enters git
+        args: [--maxkb=1024] # data guard: 1 MB per file
+        # Figures copied from the research repositories may reach 10 MB (the next hook).
+        exclude: ^projects/[^/]+/figures/
+      - id: check-added-large-files
+        args: [--maxkb=9766] # same 10 MB limit as make security for copied figures
+        files: ^projects/[^/]+/figures/
       - id: detect-private-key
       - id: check-merge-conflict
       - id: check-yaml

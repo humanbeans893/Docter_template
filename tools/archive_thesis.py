@@ -9,11 +9,8 @@ Refuses unless the working tree is clean, TAG exists and points at HEAD, and
 draft/submission.pdf and draft/supplementary.pdf exist. Writes the git-ignored
 dist/<TAG>/ with:
   submission.pdf, supplementary.pdf   the built PDFs
-  source.tar                          `git archive` of TAG (code, manuscript, manifests)
-  data-manifest.tsv                   path, size and sha256 of every file under
-                                      projects/*/data/raw/ (read only; raw is not in Git)
-  generators.txt                      `thesis_check.py --list-generators`: the scripts
-                                      that regenerate every figure, table and value
+  source.tar                          `git archive` of TAG (manuscript, research.json,
+                                      projects/)
   SHA256SUMS                          sha256 of the files above (`sha256sum -c SHA256SUMS`)
 
 An existing dist/<TAG>/ is never overwritten. Stdlib only, so it runs on the host
@@ -34,7 +31,6 @@ if sys.version_info < (3, 10):  # noqa: UP036
     sys.exit(f"{Path(__file__).name}: needs python3 3.10 or newer, not {sys.version.split()[0]}")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-THESIS_CHECK = Path(__file__).resolve().with_name("thesis_check.py")
 PDFS = ("submission.pdf", "supplementary.pdf")
 
 
@@ -96,42 +92,12 @@ def check_preconditions(root: Path, tag: str) -> Path:
     return target
 
 
-def data_manifest(root: Path) -> list[str]:
-    """``path<TAB>size<TAB>sha256`` of every file under projects/*/data/raw/ (reads only)."""
-    files: list[Path] = []
-    for raw in (root / "projects").glob("*/data/raw"):
-        for directory, _dirnames, filenames in os.walk(raw):
-            files.extend(Path(directory) / name for name in filenames)
-    rows = ["path\tsize\tsha256"]
-    for path in sorted(files, key=lambda item: item.relative_to(root).as_posix()):
-        if path.is_file():  # skips dangling symlinks
-            relative = path.relative_to(root).as_posix()
-            rows.append(f"{relative}\t{path.stat().st_size}\t{sha256_file(path)}")
-    return rows
-
-
-def generators(root: Path) -> str:
-    command = [sys.executable, str(THESIS_CHECK), "--draft-dir", str(root / "draft")]
-    result = subprocess.run(
-        [*command, "--list-generators"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise ArchiveError(f"thesis_check.py --list-generators failed: {result.stderr.strip()}")
-    return result.stdout
-
-
 def build(root: Path, tag: str, staging: Path) -> None:
     for name in PDFS:
         shutil.copy2(root / "draft" / name, staging / name)
     prefix = tag.replace("/", "-")
     source = staging / "source.tar"
     git(root, "archive", "--format=tar", f"--prefix={prefix}/", "-o", str(source), tag)
-    manifest = "\n".join(data_manifest(root)) + "\n"
-    (staging / "data-manifest.tsv").write_text(manifest, encoding="utf-8")
-    (staging / "generators.txt").write_text(generators(root), encoding="utf-8")
     names = sorted(path.name for path in staging.iterdir() if path.is_file())
     sums = [f"{sha256_file(staging / name)}  {name}" for name in names]
     (staging / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8")

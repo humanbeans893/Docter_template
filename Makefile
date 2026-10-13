@@ -1,6 +1,8 @@
-# Host-side entry point for the dissertation repository.
-# Python runs inside Docker; LaTeX (draft/compile.sh) and the stdlib-only tools under tools/ run
-# on the host. `make` or `make help` lists the targets.
+# Host-side entry point of the doctoral thesis repository. Experiments run in separate research
+# repositories; this repository gathers their content into projects/<id>/ (listed in
+# research.json) and writes the thesis in draft/. LaTeX (draft/compile.sh) and the stdlib-only
+# tools under tools/ run on the host; a small container runs pytest and ruff.
+# `make` or `make help` lists the targets.
 
 .DEFAULT_GOAL := help
 
@@ -12,20 +14,10 @@ export GID := $(shell id -g)
 COMPOSE  := docker compose
 SERVICE  := research-template
 EXEC     := $(COMPOSE) exec $(SERVICE)
+# Start the container when it is not running (first recipe line of test, lint and format).
+START    := @$(COMPOSE) ps --status running --services | grep -qx $(SERVICE) || $(COMPOSE) up -d
 # The uv image the Dockerfile builds on, so `make lock` resolves with the same Python.
 UV_IMAGE := $(shell sed -n 's/^FROM //p' Dockerfile | head -n 1)
-
-# Show what runs in the container before a command that may recreate or stop it: recreating
-# the container stops every `docker compose exec` job (check STATE.md and the experiments/JOBS.md
-# files).
-define show_running_jobs
-	@out="$$($(COMPOSE) top 2>/dev/null)"; \
-	if [ -n "$$out" ]; then \
-		echo "Running in the container now. Recreating or stopping it ends these processes"; \
-		echo "(see STATE.md and projects/*/experiments/JOBS.md for long jobs):"; \
-		printf '%s\n' "$$out"; \
-	fi
-endef
 
 # LaTeX intermediates left in draft/ by a lualatex run outside draft/compile.sh. STALE_TEX is
 # the set compile.sh refuses to build with (anywhere in draft/); EXTRA_TEX is left alone in
@@ -35,133 +27,77 @@ STALE_TEX := -name '*.aux' -o -name '*.bbl' -o -name '*.toc' -o -name '*.lof' -o
 EXTRA_TEX := -name '*.log' -o -name '*.synctex.gz' -o -name '*.tdo' -o -name '*.bcf' \
 	-o -name '*.run.xml' -o -name '*.xdv'
 
-.PHONY: help build up down ensure-up lock test lint format \
-	check check-final pdf pdf-review pdf-final supplementary submission clean-tex \
-	study experiment experiment-import archive security security-history hooks precommit
+.PHONY: help build up down lock test lint format \
+	pdf pdf-review pdf-final supplementary check check-final submission clean-tex archive \
+	security security-history hooks precommit
 
-help: ## List the targets
+help: ## ターゲットを一覧する
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-17s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# --- Container ------------------------------------------------------------------------------
+# --- Container (pytest and ruff only) -------------------------------------------------------
 
-build: ## Rebuild the image after pyproject.toml or uv.lock changes
+build: ## pyproject.toml・uv.lock を変えた後にイメージを作り直す
 	$(COMPOSE) build
 
-# GPU and the read-only /external mount are not targets of their own: list
-# docker-compose.gpu.yml / docker-compose.files.yml once in COMPOSE_FILE in .env (see
-# .env.example). Every docker compose command, `make up` and the automatic start before
-# `make test` then keep them; a one-off `-f` would be lost on the next `make up`.
-up: ## Start the container (jobs stop on recreate; GPU and /external: COMPOSE_FILE in .env)
-	$(show_running_jobs)
+up: ## コンテナを起動する(設定が変わっていれば作り直す)
 	$(COMPOSE) up -d --build
 
-down: ## Stop and remove the container (running jobs stop)
-	$(show_running_jobs)
+down: ## コンテナを止めて削除する
 	$(COMPOSE) down
 
-ensure-up:
-	@$(COMPOSE) ps --status running --services | grep -qx $(SERVICE) || $(COMPOSE) up -d
-
-lock: ## Update uv.lock in a throwaway uv container (no host Python), then run make build
+lock: ## uv.lock を使い捨ての uv コンテナで更新する(次に make build)
 	docker run --rm -u "$(UID):$(GID)" -e UV_CACHE_DIR=/tmp/uv-cache \
 		-v "$(CURDIR)":/work -w /work $(UV_IMAGE) uv lock
-	@echo "uv.lock updated. Bake it into the image with: make build"
 
 # --- Code -----------------------------------------------------------------------------------
 
-test: ensure-up ## pytest in the container; options with ARGS="-k name"
+test: ## コンテナ内の pytest。オプションは ARGS="-k name"
+	$(START)
 	$(EXEC) uv run pytest $(ARGS)
 
-lint: ensure-up ## ruff check + format check in the container
+lint: ## コンテナ内の ruff check と ruff format --check
+	$(START)
 	$(EXEC) uv run ruff check .
 	$(EXEC) uv run ruff format --check .
 
-format: ensure-up ## Auto-fix lint findings and reformat in the container
+format: ## コンテナ内の ruff で自動修正と整形をする
+	$(START)
 	$(EXEC) uv run ruff check --fix .
 	$(EXEC) uv run ruff format .
 
-# --- Manuscript -----------------------------------------------------------------------------
+# --- Thesis ---------------------------------------------------------------------------------
 
-pdf: ## Build draft/main.pdf and draft/supplementary.pdf
+pdf: ## draft/main.pdf と draft/supplementary.pdf を作る
 	bash draft/compile.sh
 
-pdf-review: ## Build draft/review.pdf for the supervisor; one chapter: ONLY=02-study1
-	bash draft/compile.sh review $(if $(ONLY),--only "$(ONLY)")
+pdf-review: ## 指導教員向けの draft/review.pdf を作る
+	bash draft/compile.sh review
 
-pdf-final: ## Build draft/submission.pdf (final layout, no draft notes)
+pdf-final: ## 提出用の体裁で draft/submission.pdf を作る(下書きの注記なし)
 	bash draft/compile.sh submission
 
-supplementary: ## Build draft/supplementary.pdf
+supplementary: ## draft/supplementary.pdf を作る
 	bash draft/compile.sh supplementary
 
-check: ## Check main, review and supplementary (refs, citations, figures, values, provenance)
+check: ## 原稿を検査する(参照・引用・図・数値・research.json)
 	python3 tools/thesis_check.py --all
 
-# One run checks both documents as one: a figure or bib entry either of them uses is used
-# (tests/test_thesis_check.py runs this exact command).
-check-final: ## Strict submission checks of submission.tex and supplementary.tex together
+# One run checks both documents as one: a figure or bib entry either of them uses is used.
+check-final: ## submission.tex と supplementary.tex を合わせて提出用に厳しく検査する
 	python3 tools/thesis_check.py --main submission.tex --main supplementary.tex --submission --strict
 
-submission: ## Build submission.pdf and supplementary.pdf, then run make check-final
+submission: ## submission.pdf と supplementary.pdf を作り、make check-final を実行する
 	bash draft/compile.sh submission supplementary
 	@$(MAKE) --no-print-directory check-final
 
-clean-tex: ## Remove draft/build/ and stray LaTeX files in draft/ (keeps PDFs and figures)
+clean-tex: ## draft/build/ と draft/ に残った LaTeX の中間ファイルを消す(PDF と図は残す)
 	rm -rf draft/build
 	find draft -type f \( $(STALE_TEX) \) -print -exec rm -f -- {} +
 	find draft -path draft/figures -prune -o -type f \( $(EXTRA_TEX) \) -print -exec rm -f -- {} +
 
-# --- Studies and experiments ----------------------------------------------------------------
-# Titles and summaries are passed through the environment ("$$TITLE"), so quotes, $ and
-# backslashes reach the tools unchanged: TITLE='Study 2: Effects' make study NAME=study2.
-# DRY_RUN=1 shows the plan without writing anything.
-
-study: ## New study + chapter: TITLE='Chapter title' make study NAME=<name> (TITLE_TEX=, NOCHAPTER=1)
-	@if [ -z "$${NAME:-}" ]; then \
-		echo "usage: TITLE='Chapter title' make study NAME=<name>" >&2; \
-		echo "       TITLE_TEX='LaTeX title' make study NAME=<name>   (title inserted as LaTeX)" >&2; \
-		echo "       make study NAME=<name> NOCHAPTER=1               (a study without its own chapter)" >&2; \
-		exit 2; \
-	fi; \
-	set -- "$$NAME"; \
-	if [ -n "$${NOCHAPTER:-}" ] && [ "$$NOCHAPTER" != 0 ]; then set -- "$$@" --no-chapter; fi; \
-	if [ -n "$${TITLE:-}" ]; then set -- "$$@" --title "$$TITLE"; fi; \
-	if [ -n "$${TITLE_TEX:-}" ]; then set -- "$$@" --title-tex "$$TITLE_TEX"; fi; \
-	if [ "$$#" -eq 1 ]; then \
-		echo "make study: set TITLE (or TITLE_TEX, or NOCHAPTER=1), e.g. TITLE='Study 2: Effects' make study NAME=$$NAME" >&2; \
-		exit 2; \
-	fi; \
-	if [ -n "$${DRY_RUN:-}" ]; then set -- "$$@" --dry-run; fi; \
-	python3 tools/new_study.py "$$@"
-
-experiment: ## New experiment: make experiment STUDY=<study> SLUG=<slug> [SUMMARY='question in a few words']
-	@if [ -z "$${STUDY:-}" ] || [ -z "$${SLUG:-}" ]; then \
-		echo "usage: make experiment STUDY=<study> SLUG=<slug> [SUMMARY='question in a few words']" >&2; \
-		exit 2; \
-	fi; \
-	set -- "$$STUDY" "$$SLUG"; \
-	if [ -n "$${SUMMARY:-}" ]; then set -- "$$@" --summary "$$SUMMARY"; fi; \
-	if [ -n "$${DRY_RUN:-}" ]; then set -- "$$@" --dry-run; fi; \
-	python3 tools/new_experiment.py "$$@"
-
-experiment-import: ## Import a past result: make experiment-import STUDY=<study> SLUG=<slug> [SOURCE= FROM= LEGACY_ID= SUMMARY=]
-	@if [ -z "$${STUDY:-}" ] || [ -z "$${SLUG:-}" ]; then \
-		echo "usage: make experiment-import STUDY=<study> SLUG=<slug> [SOURCE=<name under data/raw/legacy/>]" >&2; \
-		echo "         [FROM=<path of the past files>] [LEGACY_ID=<repo>@<sha>:experiments/NNN_x]" >&2; \
-		echo "         [SUMMARY='question in a few words']" >&2; \
-		exit 2; \
-	fi; \
-	set -- "$$STUDY" "$$SLUG" --import; \
-	if [ -n "$${SOURCE:-}" ]; then set -- "$$@" --source "$$SOURCE"; fi; \
-	if [ -n "$${FROM:-}" ]; then set -- "$$@" --from "$$FROM"; fi; \
-	if [ -n "$${LEGACY_ID:-}" ]; then set -- "$$@" --legacy-id "$$LEGACY_ID"; fi; \
-	if [ -n "$${SUMMARY:-}" ]; then set -- "$$@" --summary "$$SUMMARY"; fi; \
-	if [ -n "$${DRY_RUN:-}" ]; then set -- "$$@" --dry-run; fi; \
-	python3 tools/new_experiment.py "$$@"
-
-archive: ## Archive the submitted version: make archive TAG=<tag at HEAD> (runs make submission)
+archive: ## 提出版を保存する: make archive TAG=<HEAD に付けたタグ>(make submission も実行する)
 	@if [ -z "$${TAG:-}" ]; then \
-		echo "usage: make archive TAG=<tag>   (create the tag on HEAD first: git tag <tag>)" >&2; \
+		echo "使い方: make archive TAG=<tag>   (先に HEAD にタグを付ける: git tag <tag>)" >&2; \
 		exit 2; \
 	fi
 	@$(MAKE) --no-print-directory submission
@@ -169,14 +105,14 @@ archive: ## Archive the submitted version: make archive TAG=<tag at HEAD> (runs 
 
 # --- Repository -----------------------------------------------------------------------------
 
-security: ## Scan tracked files for secrets, private data, large files, and unpinned Actions
+security: ## 追跡するファイルの秘密情報・個人のパス・大きなファイル・external/・固定していない Actions を調べる
 	python3 tools/public_repo_check.py
 
-security-history: ## Also require a GitHub noreply email in every commit
+security-history: ## さらに全コミットの作者メールが GitHub の noreply であることを確かめる
 	python3 tools/public_repo_check.py --history
 
-hooks: ## Install host-side pre-commit hooks
+hooks: ## ホストに pre-commit のフックを入れる
 	uvx pre-commit install
 
-precommit: ## Run pre-commit hooks against all files
+precommit: ## 全ファイルに pre-commit のフックをかける
 	uvx pre-commit run --all-files

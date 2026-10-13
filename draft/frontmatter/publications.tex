@@ -1,12 +1,18 @@
-% Optional page, printed when thesis-config.tex sets \ThesisIncludePublicationstrue.
-% Lines ending in the comment `thesis:placeholder` are template text: replace them and
-% delete the comment. While one is left, make check-final (make submission) stops with E9.
-\chapter*{Publications and Author Contributions}
+% List of publications, printed while thesis-config.tex sets \ThesisIncludePublicationstrue.
+% One item per paper a chapter is based on (research.json `paper` and `paper_status`), in
+% chapter order, each naming its chapter with \cref{ch:<id>}; keep it consistent with the
+% chapter prefaces. Lines ending in the comment `thesis:placeholder` are template text: replace
+% them and delete the comment (make check-final stops with E9 while one is left).
+\chapter*{List of Publications}
 \phantomsection
-\addcontentsline{toc}{chapter}{Publications and Author Contributions}
+\addcontentsline{toc}{chapter}{List of Publications}
 
-\emph{List publications incorporated into the dissertation and state the author's contribution to each work.} % thesis:placeholder
+\section*{Publications Included in This Dissertation}
+\begin{enumerate}[label={[\arabic*]}, leftmargin=*]
+  \item Author, A., \& Coauthor, B. (Year). Title of the paper. \emph{Journal Name}, \emph{Volume}(Issue), pages. doi:10.xxxx/xxxxx. Status: published, accepted, under review or in preparation. Basis of Chapter N. % thesis:placeholder
+\end{enumerate}
 
-\begin{enumerate}
-  \item Author list. Year. Title. Journal, volume, pages. DOI. Contribution statement. % thesis:placeholder
+\section*{Other Publications}
+\begin{enumerate}[label={[\arabic*]}, leftmargin=*, resume]
+  \item Author, A. (Year). Title of a related paper or conference presentation. \emph{Venue}. % thesis:placeholder
 \end{enumerate}

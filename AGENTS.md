@@ -1,273 +1,173 @@
 # AGENTS.md
 
-このファイルは、Claude Code・Codex CLI など、このリポジトリで作業するすべてのコーディングエージェントの共通規約です。`CLAUDE.md` はこのファイルへの参照だけを持ちます。
+Claude Code・Codex CLI など、このリポジトリで作業するすべてのエージェントの共通規約です。`CLAUDE.md` はこのファイルを参照するだけです。
 
 ## 前提
 
-- 思考は英語で行い、回答はユーザーの言語(既定は日本語)で書く。
-- 日本語で書くときは、日本語で自然に書ける一般語を英語で書かない(コードの識別子と正式名称は除く)。日本語と英語が頻繁に入れ替わる文体を避ける。
-- 目的は博士論文を仕上げること。大学・研究科固有の要件(提出様式、審査手続き、業績数の条件など)は推測で書き足さない。必要ならユーザーに確かめる。
+- 思考は英語、回答はユーザーの言語(既定は日本語)で書く。日本語で自然に書ける一般語を英語で書かない(識別子と正式名称は除く)。
+- このリポジトリは、別々の研究リポジトリで行った研究を集めて博士論文に仕上げる場所。実験・データ・計算はここでは行わない。
+- 体裁は一般的な博士論文の形に従う。大学・研究科固有の要件(様式、審査手続き、業績の条件)は推測で足さず、ユーザーに確かめる。
+- 小さく保つ。仕組み・テスト・文書を足す前に、無いと本当に困るかを考える。
 
-## リポジトリの構成
+## 構成
 
-複数の研究(スタディ)と、それらを章として統合する博士論文を一つのリポジトリで管理します。
+```text
+research.json            研究の一覧 = 研究の章の構成(正本)
+projects/_template/      1つの研究を論文で読める形にまとめる雛形(写して使う。直接埋めない)
+projects/<id>/           取り込んだ研究: README.md(要約カード)・figures/・tables/・values.tex
+draft/                   博士論文(LuaLaTeX ltjsreport。本文は英語、要旨は和英)
+docs/                    論文計画・繰り返さないこと・案・研究ログ・意思決定記録・査読・指摘(docs/README.md)
+tools/                   標準ライブラリだけのツール(thesis_check.py・archive_thesis.py・public_repo_check.py)
+tests/                   リポジトリの構造とツールのテスト(コンテナの pytest)
+external/                任意・Git 管理外: 研究リポジトリの手元のクローンへのリンク(読むだけ)
+STATE.md                 運用状態(セッションの最初に読む)
+```
 
-- `projects/<study>/` — 1スタディ(通常は1章)分のデータ・コード・実験・結果・テスト。自己完結させ、兄弟スタディのコードを import しない。
-- `projects/<study>/experiments/` — そのスタディの番号付き実験、索引 `EXP_SUMMARY.md`(と `EXP_ARCHIVE.md`)、長時間ジョブの台帳 `JOBS.md`。
-- `projects/_template/` — 新しいスタディの雛形。`make study` が複製するので壊さない。ここに実験を作らない。
-- `draft/` — 博士論文(LuaLaTeX `ltjsreport`、本文は英語、要旨は和英)と補足資料。
-- `tools/` — 標準ライブラリだけのツール(`thesis_check.py`、`new_study.py`、`new_experiment.py`、`archive_thesis.py`、`public_repo_check.py`)。ホストの `python3`(3.10 以上)で動く。
-- `docs/` — 人間向けの文書(論文計画、取り込みの手引き、繰り返さないこと、案、研究ログ、意思決定記録、レビュー、指摘への対応)。使い方は `docs/README.md`。
-- `STATE.md` — 運用状態の単一ページ。`tests/` — リポジトリ全体の構造と制約のテストと、全スタディ共通のヘルパーと実験の雛形のテスト(`tests/study_kit/`)。
+雛形の `study1` は仮の研究で、最初の本当の研究を取り込むときに消します(`add-research` スキル)。
+
+### research.json
+
+`{"research": [ … ]}` の1行が1つの研究です。行の並び = `draft/main.tex` の研究の章の並び。
+
+| 欄 | 内容 |
+|---|---|
+| `id` | `[a-z][a-z0-9_]*`。`projects/<id>/`、章のファイル `draft/chapters/<id>.tex`、ラベル `ch:<id>`、値のキーの接頭辞 `<id>-` |
+| `title` | 仮の題(英語でも日本語でも) |
+| `chapter` | 章のファイル `draft/chapters/<id>.tex`。章を持たない研究(図・数値を他の章で使うだけ)は `""` |
+| `source` | 写す元 `<repo>@<sha>`(行を足すときに書く。雛形の `study1` だけ `""`)。ホストのパスは書かない |
+| `paper` | 章の基になる論文の bib キー。無ければ `""` |
+| `paper_status` | `出版済み`・`採録`・`投稿中`・`準備中`、論文が無ければ `""` |
+| `status` | `構想`(projects/<id>/ を雛形から作っただけ)→ `取り込み済み`(projects/<id>/ を埋めた)→ `執筆中` → `完成` |
+
+`<repo>` は研究リポジトリの名前(リモートの名前。無ければユーザーに決めてもらう)で、`external/<repo>` のリンクにも同じ名前を使います。`<sha>` は `git -C <path> rev-parse --short=12 HEAD` の12文字です。
+
+### projects/<id>/
+
+| ファイル | 中身 |
+|---|---|
+| `README.md` | 要約カード: id・出典・論文、問い、方法の要約、主な結果、言えないこと・注意、図表の一覧と元。章を書くときに読む |
+| `figures/` | 章が使う図(PDF・PNG・JPG)。研究リポジトリから写す。1ファイル 10 MB まで |
+| `tables/` | 章が `\input` する表(`.tex`)。中身は `tabular` だけ(`table` 環境・`\caption`・`\label` は章に書く)。セルの数値は元のまま書き、先頭のコメントに元 |
+| `values.tex` | 本文が使う数値。1行1定義で、各行の上のコメントに元 |
+
+`values.tex` の定義は2種類です。`\deftextvalue{<id>-<name>}{<値>}` は書いたとおりに出し(既定)、`\defvalue{<id>-<name>}{<数>}` は siunitx で数として組みます。`<name>` は研究リポジトリの数値のマクロ名があればそのまま(例 `<id>-NSubjects`)、無ければ同じ形の英数字。
 
 ## コマンド
 
 ```bash
-# 環境(Python はコンテナ内。初回と、pyproject.toml・uv.lock を変えた後に build)
-make build                 # イメージを作る(uv.lock の依存を /opt/venv に焼き込む)
-make up                    # 起動・作り直し(作り直すと実行中のジョブが止まる。先に確かめる)
-                           # GPU と /external は .env の COMPOSE_FILE で有効にする(「実行環境」)
-make down                  # 停止
-make lock                  # uv.lock を更新(使い捨ての uv コンテナで実行)
-make test                  # 全テスト(コンテナ内の pytest)
-make lint                  # ruff check と ruff format --check   make format: 自動修正
-docker compose exec research-template uv run python projects/<study>/experiments/NNN_<slug>/run.py --smoke
-docker compose exec research-template uv run pytest projects/<study>
-#   端末のない実行(エージェント)では exec -T を付ける
-
-# スタディと実験
-TITLE='Study title' make study NAME=<study>          # 章と登録まで作る。章の無いスタディは NOCHAPTER=1
-make experiment STUDY=<study> SLUG=<slug>            # 新しい実験(SUMMARY='問いの要約' を前に置ける)
-make experiment-import STUDY=<study> SLUG=<slug> SOURCE=<source> FROM=<path> LEGACY_ID=<repo>@<sha>:experiments/NNN_x
-
-# 原稿(ホストの LuaLaTeX。中間ファイルは draft/build/<job>/)
-make pdf                   # draft/main.pdf
-make pdf-review            # draft/review.pdf(行番号・広い行間・ビルド印)。ONLY=02-study1 で章だけ
-make pdf-final             # draft/submission.pdf
-make supplementary         # draft/supplementary.pdf
-make check                 # 原稿の整合性検査(main・review・supplementary)
-make check-final           # 提出用の厳格検査(提出版と補足資料を1回でまとめて検査)
-make submission            # 提出版と補足資料をビルドして check-final
-make clean-tex             # 中間ファイルを消す(PDF は残す)
-make archive TAG=<tag>     # make submission の後、提出物一式を dist/<tag>/ に書き出す
-
-# 公開前
-make security              # 秘密情報・大容量・Action の固定を検査   make security-history: 履歴も
-make hooks                 # pre-commit を入れる   make precommit: 全ファイルに実行
+make pdf                 # draft/main.pdf と draft/supplementary.pdf(ホストの LuaLaTeX。ログは draft/build/<job>/<job>.log)
+make pdf-review          # draft/review.pdf: 指導教員・審査員に送る版(行番号・ビルド印)
+make pdf-final           # draft/submission.pdf: 提出版
+make check               # 原稿の整合性検査(make check-final: 提出用の厳格な検査)
+make submission          # 提出版と補足資料を作って check-final(保存は make archive TAG=<tag>)
+make test                # テスト(コンテナの pytest)。make lint: ruff
+make security            # 公開前の検査(秘密情報・個人のパス・大きなファイル・external/)
 ```
 
-`make help` が一覧を出します。直接呼ぶ場合は `bash draft/compile.sh [main|review|submission|supplementary|all]`(引数なしは main と supplementary)と `python3 tools/<ツール>.py` です。`make check-final` は `python3 tools/thesis_check.py --main submission.tex --main supplementary.tex --submission --strict`(`--main` を重ねた文書は `--all` と同じく1回でまとめて検査し、どれかで使う図・書誌は使われているとみなす)。
+ほかは `make help`。直接呼ぶなら `bash draft/compile.sh [main|review|submission|supplementary|all]` と `python3 tools/<ツール>.py`。
 
-## セッション状態と引き継ぎ
+- LaTeX と `tools/` はホストで動く(`lualatex`、標準ライブラリだけの `python3` 3.10 以上)。Python のテストと ruff はコンテナの中だけ。
+- ホストで `python`・`pip`・`uv`・`virtualenv` を実行せず、`.venv` を作らない(`python3 tools/…` と `uvx pre-commit` は使える)。Claude Code では `.claude/settings.json` が拒否し、Codex ではこの規則だけが歯止めになる。
 
-チャットの文脈は、新しいセッションにも、Claude Code と Codex の切り替えにも引き継がれません。残す価値のあることは起きたときに正本のファイルへ書き、どこで途切れてもファイルだけで再開できるようにします。
+## 引き継ぎ
 
-- **開始時**に次の順で読む。
-  1. `STATE.md`(今どこにいて、次に何をするか。実行中のジョブ)
-  2. `docs/thesis-plan.md`(主張・研究課題・章構成と執筆状況)
-  3. `STATE.md` の「現在の焦点」に挙がったスタディと、このセッションで触るスタディの `projects/<study>/experiments/EXP_SUMMARY.md`(何を試し、何が残り、何を撤回したか)
-  4. `docs/guardrails.md`(撤回した主張と、繰り返さない失敗)
+チャットの内容は、次のセッションにも、Claude Code と Codex の切り替えにも残りません。エージェントの記憶にも研究の状態を置きません。残す価値のあることは、起きたその場で正本のファイルに書きます。
 
-  何かを始める前に `STATE.md` の実行中ジョブを確かめ、前のセッションのジョブを放置も二重実行もしない。
-- **作業中**は「あとで」ではなく、その場で書く。
-  - 実験の結果 → その実験の `summary.md`・`README.md` と索引の行(同じコミットで)
-  - 撤回・訂正・置き換え → 「実験」の「状態と撤回」の手順どおりに
-  - 繰り返さない失敗 → `docs/guardrails.md`、新しい案・却下した案 → `docs/ideas.md`
-  - 章の対応・執筆状況の変化 → `docs/thesis-plan.md`、指摘への対応 → `docs/feedback/`
-  - 状態の変化(段階、ジョブの投入・終了、決定) → `STATE.md`
-- **完了を報告する前**(結果・判断・ジョブ・次の作業が変わったとき)、**長時間・高コストのジョブの前**、状態が大きく変わったときに、`write-handoff` スキルで `STATE.md` を更新する(報告はその後)。セッションがいつ終わるかは分からず、チャットでの報告は残らない。「セッションの終わり」を待たない。
-- 長時間ジョブの前に `docs/launch-checklist.md` を上から確かめ、そのスタディの `experiments/JOBS.md` に投入時と完了時の行を書く。
-- `STATE.md` は運用状態だけを持つ。下の正本へリンクし、内容を写さない。
-- 常に読む文書には文字数の上限がある: `STATE.md` 6000字、`docs/thesis-plan.md` 8000字、`docs/guardrails.md` 8000字、各 `EXP_SUMMARY.md` 10000字。索引の行は1行200字まで。行数ではなく文字数で数えるので、行を長くしても収まらない。あふれたら古い決定を研究ログ・意思決定記録へ、実験の詳細をその `summary.md`・`README.md` へ、失敗の経緯を研究ログへ、論文で使わない完了済み実験の行を `EXP_ARCHIVE.md` へ移す。`tests/test_repo_structure.py` が検査する。
-- エージェントの記憶(Claude Code の自動メモリなど)は道具と端末ごとに分かれ、もう一方のエージェントや別の複製からは読めない。記憶には研究の状態を置かず、ファイルに置く。記憶とファイルが食い違ったらファイルを正とする。
+- 開始時に読む順: `STATE.md` → `research.json` → `docs/thesis-plan.md` → `docs/guardrails.md` → 触る研究の `projects/<id>/README.md`。
+- 完了を報告する前、ユーザーや研究リポジトリの作業を待つことになったとき、状態が大きく変わったときに、`write-handoff` スキルで `STATE.md` を更新する。
+- 毎回読む文書には文字数の上限がある: `STATE.md` 6000字、`docs/thesis-plan.md` 8000字、`docs/guardrails.md` 8000字(テストが検査する)。あふれたら古いものを研究ログ・意思決定記録へ移す。
 
 ## 単一の正本
 
-情報ごとに正本は1か所です。同じ表を2つのファイルに持ちません(この表もここだけに置き、他の文書はここを参照します)。
+情報ごとに正本は1か所です。同じ内容を2つのファイルに持たず、他からはリンクします。
 
 | 情報 | 正本 |
 |---|---|
-| 現在の状態・実行中のジョブと確認方法・次の作業 | `STATE.md` |
-| 論文の骨格(主張・研究課題・貢献の要約と ID、章と根拠の対応、執筆状況) | `docs/thesis-plan.md` |
-| 論文の文章(主張・研究課題・結論の表現) | `draft/` の原稿 |
-| 発表論文の一覧・著者貢献 | `draft/frontmatter/publications.tex` |
-| 実験の索引と状態(撤回を含む) | `projects/<study>/experiments/EXP_SUMMARY.md`(論文で使わない完了行は `EXP_ARCHIVE.md`) |
-| 1つの実験の今の結論 | `projects/<study>/experiments/NNN_<slug>/summary.md` |
-| 1つの実験の経緯(目的・方法・結果・考察・由来) | `projects/<study>/experiments/NNN_<slug>/README.md` |
-| 長時間・高コストのジョブの状態と履歴 | `projects/<study>/experiments/JOBS.md` |
-| 撤回した主張・繰り返さない失敗 | `docs/guardrails.md` |
-| 有望な案・却下した案 | `docs/ideas.md` |
-| 経緯と判断の理由 | `docs/research-log.md`、`docs/decisions/` |
-| 指導教員・審査員の指摘と対応 | `docs/feedback/` |
-| データ(過去の結果を含む)の由来 | `projects/<study>/data/README.md` |
-| 生成物ごとの由来と再現性 | 生成物の隣の `<name>.provenance.json`(コードが書く) |
-| 手作りの図の由来 | `draft/figures/README.md` |
-| 論文中の数値 | `projects/<study>/result/tables/*.csv`(生成した `.tex` を読み込む。本文に手で書かない) |
-| 論文のメタデータ | `draft/thesis-config.tex` |
+| 研究の一覧・章の並び・出典のコミット・状態 | `research.json` |
+| 1つの研究の内容(問い・方法・結果・限界・図表の元) | `projects/<id>/README.md` |
+| 本文の数値 | `projects/<id>/values.tex` |
+| 実験・データ・計算・図の作り方 | 研究リポジトリ |
+| 論文の文章 | `draft/` |
+| メタデータと体裁の切り替え | `draft/thesis-config.tex` |
+| 発表論文の一覧・著者の貢献 | `draft/frontmatter/publications.tex` |
 | 書誌 | `draft/reference.bib` |
-| 作業規約 | `AGENTS.md`(実験の手順と仕組みは各スタディの `experiments/README.md`) |
+| 手作りの図の由来 | `draft/figures/README.md` |
+| 運用状態・待ち・次の作業 | `STATE.md` |
+| 主張・研究課題・貢献・マイルストーン | `docs/thesis-plan.md` |
+| 撤回した主張・繰り返さない失敗 | `docs/guardrails.md` |
+| 案・却下した案 | `docs/ideas.md` |
+| 経緯と判断の理由 | `docs/research-log.md`・`docs/decisions/` |
+| 指導教員・審査員の指摘と対応 | `docs/feedback/` |
+| 査読の報告 | `docs/reviews/` |
 
-## 作業の流れ
+## 研究を取り込む
 
-### 作業の前
+手順は `add-research` スキルにあります(正本)。流れ: 研究リポジトリを読む → 案をユーザーに示す → `cp -r projects/_template projects/<id>` と `research.json` の行 → 図・表・数値・カードを埋める → 章・`\include`・`\ThesisValues` → 章を書く → `make pdf check`。
 
-1. 対象のファイルと近くの実装を読む。
-2. `pwd && git branch && git status` で場所・ブランチ・未コミットの変更を確かめる。自分が作っていない未コミットの変更は残す。
-3. `main` は保護ブランチ。`agent/<slug>` などの作業ブランチで作業し、PR で統合する。作業ブランチにいればそのまま続ける。
-4. 残っている TODO を `rg -n "TODO|FIXME" .` で確かめる。
-5. コードから決められないこと(研究上の判断、欠けたデータ、どの過去の結果が正式か)だけをユーザーに確かめる。
+規則:
 
-### 作業中
-
-- 入力は早い段階で明示的に検証する。
-- 書く前に探す: `rg -n "<概念>" projects/<study>/src projects/<study>/scripts projects/<study>/experiments`。あるものを使い、近くの動いている例に倣う。足りない再利用部品は先に `src/` の適切な場所へ足す。同じ計算を2か所に書かない。共有の関数の動作を変えるときは呼び出し元を確かめる。
-- スクリプトは薄く保ち、`src/` の関数を組み合わせるだけにする。
-- 生成物は手で直さず、コードから作り直す。
-
-### コミットの前
-
-- 変更に見合う最小の検証を走らせる(下の「検証」)。
-- 解決した TODO とデバッグ出力を消す。意図したファイルだけを stage し、`git status` で確かめてからコミット・push する。
-
-## 実験
-
-試行錯誤は各スタディの `experiments/` に、1実験1ディレクトリで積み上げます。規則はこの節だけに書きます。手順と実行の仕組みの説明は各スタディの `experiments/README.md`(どのスタディでも同じ内容)にあります。
-
-### 構成
-
-- 名前は `NNN_<slug>`(スタディごとの3桁の連番と、英小文字・数字・`_` の slug。例: `001_baseline_fit`)。`make experiment STUDY=<study> SLUG=<slug>`(過去の結果なら `make experiment-import`)が番号を決め、雛形を複製し、索引に行を足す。実験のディレクトリと索引の行は消さず、番号を使い回さない。やめた実験は `中止` にする。
-- 各実験は `summary.md`(今の結論。50行・3000字まで。書き直してよいのはこのファイルだけ)、`README.md`(経緯の記録。追記と誤字の修正だけ)、`run.py`(入口)、`params.py`(シード `SEED`・データの選び方・期間・閾値・モデルの設定など結果を変えうる値のすべてと、`--smoke` の値 `SMOKE`。`config.py` や環境変数から読まない)、`out/`(Git 管理外)で自己完結する。終わった実験の `run.py`・`params.py` は変えず、条件を変えるなら新しい番号にする。
-- 読む順は 索引の行 → `summary.md` → `README.md`。実験を前提にする・引用する・章に書く前に `summary.md` を読み、`README.md` は方法を再現・拡張・点検するときだけ開く。数値には出所の CSV(行・列)を添え、食い違えば CSV を正とする。
-
-### 実行
-
-- `run.py` は全体を `with experiment.start(__file__, params) as run:` で包む(`src/utils/experiment.py`)。冒頭の sys.path の処理と `import config`・`from src.utils import …`(experiment・figures・tables)は消さず、関数の中へ移さない(スタディはパッケージとして入っていない)。記録や進捗のコードは `run.py` に書かず、`experiment.py` を直す(直し方は「研究コード」)。
-- 先に `--smoke`(`params.SMOKE` を当てた小さな実行。`out/smoke/` に書き、`result/` を変えない。段階ごとの所要時間が本実行の見積もりになる)、それから本実行。完了した本実行は `--overwrite` なしでは繰り返せない(残すなら新しい実験にする)。記録は `out/params_used.json`(状態・シード・パラメータ・コミットと未コミットのコード・段階の時刻・出したファイル)。
-- 作業用の出力は `run.out()` で自分の `out/` へ。論文や他の実験が使うものはコードで出す: 図は `save_figure`(過去の画像は `import_figure`)、表は `write_latex_table`、本文の数値は `write_latex_values`、それ以外のファイルは `run.promote()`(`result/tables/` へ。大きな出力は `dest_dir=config.PROCESSED_DATA_DIR / run.name`)。実行中はどれも `out/staged/` に置かれ、**本実行が最後まで通ったときだけ** `result/`(と `data/processed/NNN_<slug>/`)にまとめて入る(失敗・中断・`--smoke` では変わらない。公開中の強制終了は `make check` の E12 が知らせ、次の本実行が戻す)。手でコピーせず、論文や他の実験から `out/` を読まず、他の実験の `run.py` を import しない。2つ目の実験が必要とするロジックは `src/` へ移す。
-- 本実行の前に、`summary.md` の問いと判定の規則・`params.py`・`run.py` と変えたコードをコミットする。コード(そのスタディの `src/`・`scripts/`・`config.py`・`experiments/` の `.py`、ルートの `config.py`・`pyproject.toml`・`uv.lock`)に未コミットの変更があったり、実行中に変わったりすると(同じスタディで新しい実験を作ることも含む)、その後に書いた生成物は未コミットのコードの扱いになる(由来記録の `git_dirty`、`make check` の W15)。原稿・文書・`STATE.md`・`result/` の変更は数えない。
-- 体裁だけを変える図などは `src/` か `scripts/` の昇格スクリプトに置く。実験が出した `result/tables/*.csv` や `data/processed/NNN_<slug>/` を読んで作るものは、読んだファイルを `sources=[...]` で由来記録に残す(ヘルパーにも `run.promote()` にも。W14 と `--list-generators` がそこから元の実験をたどる)。
-
-### 状態と撤回
-
-- 索引(`EXP_SUMMARY.md`。論文で使わずに終わった完了・中止の行は `EXP_ARCHIVE.md`)の列は `| # | slug | 一行で | 状態 | 論文 | 由来 |`。状態欄と `summary.md` の「状態」は同じ語で始める: `進行中`(結論がまだない)・`完了`(答えが立っている)・`中止`(結論を出さずにやめた)・`訂正`(一部を直した。主な結論は保たれる)・`撤回`(主な結論を取り下げた)・`置き換え`(後の実験が同じ問いに答え直した)。後ろに `(YYYY-MM-DD、→ NNN_<slug>)` を足してよく、理由は `summary.md` に書く。論文欄は章のラベルか `—`。由来欄は `新規`、取り込みは `取り込み`、閉じたら `取り込み(R2)` のように再現性を書く。
-- 本実行の後に、`summary.md` の答え・主な数値・本実行と、索引の一行で・状態を同じコミットで直す(`--smoke` では直さない。`--overwrite` で作り直したら本実行と主な数値も)。
-- 撤回・訂正・置き換えは同じコミットで直す。「あとで書く」と、実際には書かれない。(1) `summary.md` の状態と答えを書き直し(取り下げた記述は消さずに取り消し線で残す)、「訂正・撤回・置き換え」の行に日付と根拠を書く。(2) 索引の状態欄を同じ語で始める(行が `EXP_ARCHIVE.md` にあれば索引へ戻す)。(3) 撤回と、古い主張が外に出た(送った版・投稿・発表)訂正・置き換えは `docs/guardrails.md` に1行足す。原稿(W14 が挙げる生成物と、その結論を書いた章・要旨・結論・`docs/thesis-plan.md`)は、原稿を直す作業を任されていれば同じ作業で直し、任されていなければ `STATE.md` の次の作業に P0 で書く。
-- `make check` の W14 は、撤回・中止・置き換えの実験と、まだ `進行中` の実験から来た生成物を知らせる(提出の検査では誤り)。使わなくなった生成物は `result/` に残してよい(I5。手で消すのは撤回・中止・置き換えの実験のものだけ)。`tests/test_repo_structure.py` がディレクトリ・索引・`summary.md` の対応と状態の一致を検査する。
-
-### 速く回る実験を書く
-
-何時間もかかる実験は時間を失うだけではありません。再実行されなくなり、再実行しない解析は確かめられなくなります。どの実験も何度も実行するものとして書きます。
-
-- **動かす前に測る。** 計時が必要を示すまで、HPC への移植、並列化、間引きをしない。1台に収まらないように見えるデータも、読み方を工夫すれば収まることが多い。
-- **使うものだけ読む。** データを開くときに不要な変数を落とす(`xarray` は `interp` などで残った変数をすべて実体化する)。各ファイルは一度だけ開いて使い回し、点ごとの参照はループではなく一度のベクトル化した呼び出しにまとめる。
-- **層の中で一定の量は、層ごとに一度だけ計算する。** 行ごとに計算しない。
-- **段階ごとに進捗を出す。** 扱っている行数も出す。何も出さない実行は、止まっている実行と区別できない。
-- **遅い部分を最後に置く。** 抽出・検証・安い厳密な検査を高価な当てはめの前に走らせ、間違いが数時間後ではなく数秒で分かるようにする。安い検査で候補を絞れるなら先に行う。
-
-## 過去の結果の取り込み
-
-これまでの実験結果は、手引き `docs/importing-past-results.md` に従い、`import-results` スキルで取り込みます。要点:
-
-- 1つの主張を支える1組の結果ごとに取り込み実験を1つ作る(`make experiment-import`)。使う実行(正式な1回)を決め、合成データやデモの出力は結果として扱わない。古いリポジトリで撤回・中止された実験は、ユーザーが決めない限り取り込まない。
-- 過去の出力は `projects/<study>/data/raw/legacy/<source>/` に、過去の入力データは `projects/<study>/data/raw/<dataset>/` に置く。そこへコピーするのは**ユーザー**で、エージェントはコマンドを示すだけ(頼まれても実行しない)。マニフェスト `inputs.sha256` は raw を読むだけなのでエージェントが生成してよい。ハッシュを手で打たない。
-- 取り込みの `run.py` は 入力の照合 → `out/` での作り直し → 既報の数値との照合 → ヘルパー の順に進め、照合が通らなければ `result/` は変わらない。再現性は生成物ごとに決め、由来記録に入る: **R1** ここで計算し直して一致を確かめた / **R2** 残った数値から図表を作り直した(計算はしていない) / **R3** 画像や論文の数値をそのまま載せた(`make check` の I3 に一覧が出る)。
-- 取り込み実験が `完了` になるまで、その結果を本文で使わない。由来は README の「由来」と `data/README.md` の台帳に、ホストの絶対パスではなく `<repo>@<sha>:<path>` で書く。
-
-## 研究コード
-
-- 再利用するロジックは `src/`(`utils/`・`models/`・`methods/`・`analysis/`)、薄い実行入口は `scripts/`、試行錯誤は `experiments/`。
-- `src/utils/` のヘルパー(`experiment.py`・`figures.py`・`tables.py`・`provenance.py`)と実験の雛形(`experiments/_template`・`_import_template`)は全スタディ共通。直すときは `projects/_template` で直して `tests/study_kit/` のテストを通し、全スタディへ写す(雛形は `<study>` をスタディ名に置き換えて)。スタディの写しだけを直さない。写し忘れは `tests/test_study_copies.py` が知らせる。スタディ固有の補助は `src/utils/` に別のモジュールとして足してよい。
-- 失敗は明示する。必須の入力は `assert` などで分かりやすい文言とともに検証し、既定値やダミー値で処理を続けない。例外を黙って握りつぶさない。広い `try`/`except` は、その失敗を意図して扱うときだけ使う。試し書きの既定値は、`src/` やスクリプトへ移す前に明示的な検証に直す。
-- 図表と数値の名前は `<study>-<slug>`(全スタディで一つの名前空間。`make check` の W16 が接頭辞を検査する)。
-- スタディの `config.py` の名前を使う(`STUDY_ROOT`、`RAW_DATA_DIR`、`FIGURE_DIR`、`TABLE_DIR`、`EXPERIMENTS_DIR` など)。research-template の名前 `PROJECT_ROOT`・`DATA_ROOT` と古い名前 `EXP_DIR`(`EXPERIMENTS_DIR` と同じ)も使えるが、`PROJECT_ROOT` はスタディのルートで、`DRAFT_DIR` と `/data` は無い。書き込みは `*_DIR` の下だけにする。
-- ルートの `config.py` には、全章の図の体裁 `VISUALIZATION`(すべての章の見た目をそろえる。数値は変えない)と物理定数 `GEO` だけを置く。結果を変えうる値(シード、データの選び方、閾値、モデルの設定)は実験の `params.py` に置き、`config.py` には置かない。
-- 複数のスタディを総合する解析は、総合用のスタディ(`make study NAME=synthesis NOCHAPTER=1` など、章を持たないスタディ)に置く。他のスタディのコミット済みの `result/tables/*.csv` をファイルとして読み、由来記録の `sources` に sha256 とともに記録する。他のスタディのコードは import しない。
-- import の書き方はリポジトリ内でそろえる。新しい計算にはテストを足す。
-
-## データ
-
-- `data/raw/` は不変。エージェントは書き込まない。Claude Code ではフックと拒否設定(`.claude/settings.json`)が止め、コンテナの中では読み取り専用のマウントが止める。Codex などをホストで動かすときは何も止めないので、`data/raw/` を書き換えうるコマンド(`cp`・`mv`・`rsync`・`rm`・リダイレクトなど)を自分で避ける。止まったら回避せず、ユーザーが自分の端末で実行するコマンドを示す。
-- 共有する生データは1つのスタディが持ち、他のスタディは台帳にパスと sha256 で参照する。
-- コードがダウンロードしたデータは `data/interim/acquired/<dataset>/` にマニフェストとともに書き、ユーザーがホストで `data/raw/<dataset>/` へ移す。R1 の再実行では入力を取り直さず、保管したコピーを使う。
-- リポジトリに置けないデータは、`.env` の `EXTERNAL_FILES_DIR` と `COMPOSE_FILE`(`docker-compose.files.yml` を加える)で `/external` に読み取り専用で付ける(`docs/integrations.md`)。
-- `data/interim/` と `data/processed/` はスクリプトで作り直す。手で編集しない。
-- データを置いたら `projects/<study>/data/README.md` に入手元・取得日・ライセンス・チェックサム・スキーマ・再入手の方法を書く。過去の結果は「過去の結果(legacy)の記録」のブロックに、元の場所・実施時期・実施者・生成コードとコミット・再現性・取り込み実験・公開可否・バックアップ先・マニフェストを書く。
-- 生データと大きなファイルを Git に入れない(追跡するファイルは 1 MB まで)。データを消すのはユーザーの明示の確認の後だけ。
+- 研究リポジトリはここから読むだけ。ファイルを編集せず、スクリプトを実行せず、コミット・`checkout`・`pull`・`stash` もしない。使う git は `git -C <path> rev-parse|status|log|show|diff|ls-files` だけ(`<path>` はユーザーが示すクローンの場所か `external/<repo>`)。
+- 研究リポジトリの形は問わない。README・STATE.md・論文の原稿・結果・図や数値を作ったコードを読み、どれが正式な結果かを確かめる。決められなければユーザーに聞く。
+- コミットした状態から写し、元を `<repo>@<sha>:<path>` で書く(カードの図表の表、`values.tex` と表のコメント)。
+- 計算・データ・実験は研究リポジトリに残す。ここで再計算・再描画・図の加工をしない。欠けた図や数値は研究リポジトリで作ってもらい、そのコミットから写す。
+- 数値の元は、結果のファイル(CSV などの行・列)> 研究リポジトリの論文の原稿(`<repo>@<sha>:<file>` の節)> 出版版(bib キーと表・ページ)の順に選ぶ。値は元の表記のまま写す。論文と同じ桁に丸めるのはよい(元の値もコメントに書く)が、換算・差・比など計算の要る値は研究リポジトリで作ってもらう。
+- 撤回・訂正された結果は、表の行・列も含めて写さない。撤回した主張は `docs/guardrails.md` に1行書く。
+- カードは要約する。論文の全文を貼らない。
 
 ## 原稿
 
-- ビルドは `make pdf` などか `bash draft/compile.sh` だけ。`draft/` の中で `lualatex`・`bibtex` を手で実行しない(残った `.aux`・`.bbl` が黙って読まれ、参照の欠けた PDF ができる)。`compile.sh` は `draft/` に古い中間ファイルを見つけると止まるので、`make clean-tex` で消す。中間ファイルとログは `draft/build/<job>/`(例: `draft/build/main/main.log`)。
-- 論文のメタデータは `draft/thesis-config.tex` だけに書く。
-- ラベルは `ch:`・`sec:`・`subsec:`・`fig:`・`tab:`・`eq:`・`alg:`・`app:`。スタディの章は `ch:<study>`、節は `sec:<study>-…`。参照は `\cref` だけ(裸の `\ref` は使わない)。章番号は `draft/main.tex` の並びで決まり、ファイル名の `NN-` は作った順の目印にすぎない。章はラベルで指す。
-- 解析の図は `projects/<study>/result/figures/` から `\includegraphics{<study>-<slug>}`(パスと拡張子なし。`\graphicspath` で探す)。`draft/figures/` には手作りの図(模式図、写真など)だけを置き、`draft/figures/README.md` の台帳に行を足す。`experiments/*/out/` や `data/` の下を直接読み込まない(E10)。
-- 表は `write_latex_table` が書いた `.tex` を `\input{../projects/<study>/result/tables/<name>}` で読む。
-- 本文・要旨・図表の説明の数値は手で書かない。`write_latex_values` で書き出し、そのファイルを `draft/values.tex` の終わりの目印より上に `\ThesisValues{../projects/<study>/result/tables/<name>}` で登録し、本文で `\val{<name>-<key>}`(数として組む)、`\valqty{<name>-<key>}{<単位>}`(単位付きの量)、`\rawval{…}`(文字列のまま)と書く。章の中で値のファイルを `\input` しない(要旨は章より前に組まれる。E11)。
-- 生成物には由来記録(`.provenance.json`)が付く。未コミットのコードで作った生成物(W15。「コード」の範囲は「実験」)と、撤回・中止・置き換え・進行中の実験の生成物(W14)を提出版に残さない。由来記録のコミットは実行の始め(`scripts/` ではヘルパーの import 時)のもの。図・表・数値のファイルそのものには日時もコミットも入れない(同じコードから同じファイルができるように。それらは由来記録だけが持つ)。
-- ある章の結果が変わったら、和英の要旨・結論・`docs/thesis-plan.md` を同じ作業で直す。
-- 補足情報は、まず論文内の付録(`backmatter/appendix-<study>.tex`、`\label{app:<study>}`、`\appendix` の後に手で `\include`)に置く。製本できない資料だけを `supplementary.tex` に入れる。本文からは付録を `\cref` で参照し、補足資料の PDF の中を指さない。
-- 背景・理論の章が要るときは `chapters/_background-template.tex` を `chapters/background.tex` に写し、テンプレート専用の部分を消して `main.tex` の行のコメントを外す(ラベルは `ch:background`・`sec:background-*`)。
-- 既発表・投稿中の論文を章にするときは `docs/importing-past-results.md` の「既発表・投稿中の論文を章にする」の手順に従う。
-- 指導教員・審査員へ送る版は `make pdf-review`(行番号と、コミットと日付の印が付く)。ユーザーが `review/YYYY-MM-DD` のタグを付け、受けた指摘は `docs/feedback/` に記録する。
-- 原稿を変えたら `make pdf` と `make check`。提出前は `make submission` と生成物の作り直しの確認(`draft/SUBMISSION_CHECKLIST.md`)、その後 `make archive TAG=<tag>`。
-
-## 何をテストするか
-
-- 解析の正しさを担保するもの: 答えの分かっている合成データでの推定、単位・分母・丸めの独立な計算との照合、再現の入口(誤った入力で止まる、既存の結果を上書きしない)。各スタディの `projects/<study>/tests/` に置き、複製した直後から通る状態を保つ。
-- 全スタディ共通のヘルパーと実験の雛形: `tests/study_kit/` が `projects/_template` のものを一度だけ検査する。各スタディの写しが同じであることは `tests/test_study_copies.py` が確かめる。
-- システムの制約: 実行環境と読み取り専用の生データ(`tests/test_runtime_constraints.py`)、引き継ぎの構造(`tests/test_repo_structure.py`)、雛形と登録の整合(`tests/test_template_integrity.py`)、各ツールとフック(`tests/test_*.py`)。
-- 原稿は、PDF を黙って壊す構造だけを検査する(参照・引用・図・値・由来。`tools/thesis_check.py`)。見出し・語数・文言・主張は固定しない。文章は著者が確かめる。
-- テストを足すのは、新しい計算・実際に起きた不具合・システムの制約に対して。文章を直すたびに増えるテストは、やがて実行されなくなる。
-
-## 実行環境
-
-- Python・uv・パッケージの追加・テストはコンテナ内(`docker compose exec research-template uv run|add …`)。Git・ファイル操作・Docker・LaTeX、標準ライブラリだけの `tools/` はホストで実行する。
-- ホストにプロジェクトの `.venv`・`venv` を作らない。ホストで `python -m venv`・`virtualenv`・`uv venv`・`uv sync`・`uv run`・`uv add`・プロジェクトの `pip install` を実行しない。ホストの `python3` は標準ライブラリだけの `tools/` とフックに使う(3.10 以上)。Claude Code では `.claude/settings.json` がホストの `python`・`pip`・`virtualenv`・`uv` などを拒否する(`python3` の `tools/` と `uvx pre-commit` は使える)。Codex ではこの規則だけが歯止めになる。
-- 依存環境はイメージ内の `/opt/venv`(`uv.lock` から焼き込む)。`HOME` と uv のキャッシュは名前付きボリュームで、キャッシュ類は `HOME` の下にあり、`/workspace`(ホスト)には環境のものが書かれない。
-- `uv add` はコンテナ内で実行し、その後 `make lock && make build` でイメージに焼き直し、`uv.lock` をコミットする。ビルドは lock を固定版で入れるので、古い lock では止まる(`pyproject.toml` の名前を変えた後の `Missing workspace member` など)。
-- 各スタディの `data/raw/` はコンテナ内で読み取り専用(`docker-compose.yml` のスタディごとの bind。元が無ければ起動に失敗する)。新しいスタディは `make up` で作り直すまでマウントされず、その間はコンテナからも書けてしまう(`tests/test_runtime_constraints.py` が検出する)。
-- コンテナを作り直すと(`make up`、`make build` の後の起動、compose の変更)、`docker compose exec` で動いているジョブはすべて止まる。作り直す前に `docker compose top`・`STATE.md`・各スタディの `experiments/JOBS.md` で実行中のジョブを確かめる。
-- GPU と `/external` は `.env` の `COMPOSE_FILE` に一度書く(GPU は `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`、`/external` は `:docker-compose.files.yml` を加えて `EXTERNAL_FILES_DIR` も書く)。以後の `docker compose` と `make` はすべてそれを使い、起動は `make up` だけ。`-f` を1回のコマンドに付けるだけでは、次の `make up`(`make study` や `uv add` の後)や `make test` の自動起動で、エラーなしに外れる。`COMPOSE_FILE` を変えたら、実行中のジョブを確かめてから `make up`。
-- `.env` は任意(`.env.example` を写す。`COMPOSE_FILE`、`EXTERNAL_FILES_DIR`、`docker compose` を直接使うときの `UID`/`GID`)。`make` は UID と GID を自動で渡す。
-- コンテナはポートを公開しない(`docker-compose.yml` に `ports` を足さない)。
-- LaTeX はホストの `lualatex` を `draft/compile.sh` から使う(コンテナに TeX は無い)。
+- ビルドは make か `bash draft/compile.sh` だけ。`draft/` の中で `lualatex`・`bibtex` を手で実行しない(残った `.aux`・`.bbl` が黙って読まれる)。`compile.sh` が古い中間ファイルで止まったら `make clean-tex`。
+- 本文・図表の説明・LaTeX のコメントは英語。要旨は和文と英文。
+- 体裁: 表紙(題名 和英・著者・学位・大学・研究科・専攻・指導教員・日付)、和英の要旨、謝辞、業績一覧、目次、図目次・表目次、章、参考文献、付録。前付けはローマ数字、本文からアラビア数字。メタデータと体裁の切り替え(業績一覧・図表目次・余白・行間など)は `draft/thesis-config.tex` だけで変える。大学の要項はユーザーが示したときだけ反映する。
+- 研究の章は `draft/chapters/<id>.tex`。章番号は `draft/main.tex` の並びで決まる。章はラベルで指す。
+- ラベルは `ch:`・`sec:`・`subsec:`・`fig:`・`tab:`・`eq:`・`alg:`・`app:`。研究の章は `ch:<id>`、節は `sec:<id>-…`、図表は `fig:<id>-…`・`tab:<id>-…`。参照は `\cref` だけ(裸の `\ref` は使わない)。
+- 図: `\includegraphics{<id>/figures/<name>}`(拡張子なし。`\graphicspath` が `draft/figures/` と `projects/` を探す)。`draft/figures/` には手作りの図(模式図・写真)だけを置き、台帳 `draft/figures/README.md` に行を足す。研究リポジトリや `external/` を直接読まない(E10)。
+- 表: `table` 環境の中で `\input{../projects/<id>/tables/<name>}`。`\caption` と `\label` は章に書く。
+- 数値: 結果の数値(測定値・推定値・統計量・件数)を本文・要旨・結論・図表の説明に手で書かない。`\val{<id>-<name>}`、単位付きは `\valqty{<id>-<name>}{<単位>}`、文字列のままなら `\rawval{<id>-<name>}`。値のファイルは `draft/values.tex` に登録し、章の中で `\input` しない(E11)。
+- 論文を基にした章: 雛形の前書き(出版の状況と `\citet{<bibkey>}`、著者の貢献、転載の許諾・著作権、発表版との違い)を埋め、Introduction / Methods / Results / Discussion / Summary として書き直す。ユーザーにしか分からない項目は、答えが来るまでコメントのまま `% TODO` にする。論文を貼るのではなく、博士論文の1章として書く: 総合序論と重なる背景は削って `\cref` で指し、Summary で答えた研究課題と次の章へのつながりを書く。出版社の規程で学位論文への再利用が許されるかはユーザーに確かめる。
+- 1つの研究の結果が変わったら、和英の要旨・結論・`docs/thesis-plan.md` を同じ作業で直す。
+- 付録は `backmatter/appendix-<id>.tex`(`\label{app:<id>}`)を `\appendix` の後に `\include` する。製本できない資料だけを `supplementary.tex` に入れる。
+- 背景・理論の章が要るときは `chapters/_background-template.tex` を `chapters/background.tex` に写し、`main.tex` のその行のコメントを外す。
+- 指導教員・審査員に送る版は `make pdf-review`。`review/YYYY-MM-DD` のタグはユーザーが付ける。受けた指摘は `docs/feedback/` に記録する。
 
 ## 文献
 
-- 書誌の正本は `draft/reference.bib` だけ。文献管理ソフトと同期しない。
-- エージェントは Zotero などの文献管理ソフトに接続しない。ユーザーが自分のライブラリの書誌を使いたいときは、BibTeX などで書き出して渡してもらう。
-- 書誌を足す前に、見つけたものも渡されたものも、DOI から原典(出版社のページ、Crossref、PMC、保存版)と照合する。引用する数値も原文で確かめる。照合したら `verified = {YYYY-MM-DD, doi:10.…}` の欄を付ける(DOI が無ければ `isbn:` か公式ページの `url:`)。`make check` の I4 が欄の無い項目を挙げ、提出の検査では誤りになる。W13 は DOI の重複を挙げる。
+- 書誌の正本は `draft/reference.bib` だけ。エージェントは Zotero などの文献管理ソフトに接続しない。ユーザーのライブラリの書誌は BibTeX で書き出して渡してもらう。
+- 足す前に、見つけたものも渡されたものも DOI から原典(出版社のページ、Crossref など)と照合し、`verified = {YYYY-MM-DD, doi:10.…}` の欄を付ける(DOI が無ければ `isbn:` か公式ページの `url:`)。研究リポジトリの論文の `.bib` から写す項目も同じ。
+- 自分の未発表の論文(`投稿中`・`準備中`)は原稿と照合し、`verified = {YYYY-MM-DD, <repo>@<sha>:<原稿のパス>}` とする。出版されたら DOI で照合し直す。
 - 引用キーは `authYYYYfirstword`。`file`・`local-url`・`annote` など手元のパスや私的なメモの欄は消す。
-- 引用を捏造しない。確かめられないときは「出典が必要な箇所」として報告する。
-- 雛形の `lamport1994latex` と `\nocite` は、最初の本当の引用を足したときに消す。
+- 引用を捏造しない。照合できない文献は入れず、章のその箇所に `% TODO: citation needed (<著者 年>, unverified)` と書く(`make check` の TODO の一覧に出て、提出の検査で止まる)。
+- `reference.bib` の項目の外(コメント)に `@` を書かない。BibTeX が項目と読んでビルドが止まる。
+- 雛形の仮の書誌 `lamport1994latex` と `main.tex` の `\nocite` は、最初の本当の引用を足したときに消す。
 
 ## 公開リポジトリの安全
 
-- `main` へ直接 push しない。force push と履歴の書き換えは、ユーザーの明示の指示なしに行わない。
-- `.env`、資格情報、個人情報、未公開データ、文献管理ソフトのデータベース、文献の PDF を読まない・コミットしない。`.codex/config.toml` もコミットしない。
-- 追跡するファイルにホストの絶対パス(`/home/<user>/`、`/Users/<name>/`、WSL の `/mnt/c/Users/<name>/`、Windows の `C:\Users\<name>\`)を書かない。過去の結果の場所は `<repo>@<sha>:<path>` で書く。
-- 外部アプリの資格情報は環境変数か Git 管理外のクライアント設定に置く。外部の同期フォルダは読み取り専用でマウントする。
-- GitHub Actions は最小権限と、コミット SHA での完全な固定を保つ。
-- 公開・push の前に `make security` と `git diff --check` を実行する。
+- このテンプレートは公開リポジトリ。実際の博士論文はテンプレートから private のリポジトリとして作る(未発表の結果や、転載の許諾が要る図が入るため)。
+- 追跡するファイルにホストの絶対パス(`/home/<user>/`、`/Users/<name>/`、`C:\Users\<name>\` など)を書かない。研究リポジトリは `<repo>@<sha>:<path>` で書く。
+- `.env`・資格情報・個人情報・文献の PDF・文献管理ソフトのデータベースを読まない・コミットしない。`external/` をコミットしない。
+- 追跡するファイルは 1 MB まで(`projects/*/figures/` だけ 10 MB まで)。
+- `main` へ直接 push しない。force push と履歴の書き換えはユーザーの明示の指示なしに行わない。push の前に `make security` と `git diff --check`。
+- GitHub Actions は最小権限と、コミット SHA での固定を保つ。
 
 ## 検証
 
-- Python を変えた: 対象のテスト → `make test lint`。
-- `experiments/`・`STATE.md`・`docs/`・スキルを変えた: 少なくとも `docker compose exec research-template uv run pytest tests/test_repo_structure.py`。
-- 原稿を変えた: `make pdf check`。成功したら PDF のパスとページ数を報告する。人に送る版は `make pdf-review` と `make check`。
-- GitHub・CI を変えた: YAML の構文、Action の固定、PR 上のすべての検査を確かめる。
-- push の前に、意図したファイルだけが stage されていることを確かめる。
+- 原稿・`projects/`・`research.json` を変えた: `make pdf check`(誤り 0)。報告には PDF のパスとページ数を書く。人に送る版は `make pdf-review` と `make check`。`make check` の記号の意味と直し方は `thesis-check` スキル。
+- 文書・スキル・Python・設定を変えた: `make test`(Python は `make lint` も)。
+- 提出: `draft/SUBMISSION_CHECKLIST.md` を確かめ、`make submission`、タグを付けて `make archive TAG=<tag>`。
 
-## 破壊的な操作と外部への操作
+## 破壊的な操作
 
-次は事前にユーザーの意図を確かめます: ファイル・ディレクトリの削除、データの上書き、パッケージの追加・削除、履歴の書き換え、GitHub の公開範囲・リモート・認証の変更、タグの作成と push、実行中のジョブがあるときのコンテナの作り直し、スタディの削除・改名(手順は `projects/README.md`)、その他取り返しのつかない操作や費用のかかる操作。ファイルの読み取り、テスト、ビルド、`git status`・`git diff`・`git log` は確認不要です。
+- 研究リポジトリには書き込まない。直すべきことは、研究リポジトリでの作業としてユーザーに伝え、`STATE.md` の待ちに書く。
+- 次は事前にユーザーに確かめる: ファイル・ディレクトリの削除、上書き、研究の削除・改名(`projects/<id>/`・`research.json` の行・章・`\include`・`\ThesisValues` をまとめて)、パッケージの追加・削除、履歴の書き換え、タグの作成と push、GitHub の公開範囲・リモート・認証の変更、その他取り返しのつかない操作。
+- 読み取り、テスト、ビルド、`git status`・`git diff`・`git log` は確認不要。
 
 ## スキル
 
-Claude Code は `.claude/skills/`、Codex は `.agents/skills/` から読み込みます。両方にあるスキルは同じ内容に保ちます(テストが一致を検査します)。
+Claude Code は `.claude/skills/`、Codex は `.agents/skills/` から読みます。両方にあるスキルは同じ内容に保ちます(テストが一致を検査します)。
 
-- `write-handoff`(両方) — 完了の報告の前・長時間ジョブの前・状態が大きく変わったときに `STATE.md` を更新し、ファイルだけで再開できる状態にする。
-- `import-results`(両方) — 過去の実験結果を由来つきで取り込み、章へつなぐ。
-- `thesis-check`(両方) — PDF をビルドし、整合性検査の結果を修正案つきでまとめる。
-- `research-log`(両方) — 結果・判断・行き止まりを研究ログ・意思決定記録・`docs/guardrails.md` に記録する。
-- `review-chapter`(Claude Code) — 1章を並列のサブエージェントで査読し、`docs/reviews/` に報告を書く。
-- `review-thesis`(Claude Code) — 論文全体の一貫性を並列のサブエージェントで査読し、`docs/reviews/YYYY-MM-DD-thesis.md` に書く。
+- `add-research`(両方) — 研究リポジトリを読み、`projects/<id>/`・`research.json` の行・章を作って埋める。後の更新も。
+- `write-handoff`(両方) — 完了の報告の前などに `STATE.md` を更新し、ファイルだけで再開できる状態にする。
+- `thesis-check`(両方) — PDF をビルドし、`make check` の結果を修正案つきでまとめる。
+- `research-log`(両方) — 判断・行き止まりを研究ログ・意思決定記録・`docs/guardrails.md` に記録する。
+- `review-chapter`(Claude Code) — 1章を並列のサブエージェントで査読し、`docs/reviews/` に書く。
+- `review-thesis`(Claude Code) — 論文全体の一貫性を査読し、`docs/reviews/YYYY-MM-DD-thesis.md` に書く。

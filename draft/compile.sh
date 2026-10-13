@@ -11,18 +11,15 @@
 #   bash draft/compile.sh main                # draft/main.pdf: draft copy, \todo notes, build stamp
 #   bash draft/compile.sh review              # draft/review.pdf: copy for the supervisor/committee
 #                                             #   (line numbers, wide spacing, no \todo notes, stamp)
-#   bash draft/compile.sh review --only 02-study1
-#                                             # draft/review-02-study1.pdf: only that chapter, with
-#                                             #   the numbers and cross-references of the full copy
 #   bash draft/compile.sh submission          # draft/submission.pdf: final layout, no stamp
 #   bash draft/compile.sh supplementary       # draft/supplementary.pdf
 #   bash draft/compile.sh all                 # main review submission supplementary
 #
 # Several jobs may be given (`main review`); each runs lualatex, BibTeX when the document cites
-# something, then lualatex twice. A failing job does not stop the others. --only takes chapter
-# file stems under chapters/ (or paths such as backmatter/appendix-a), repeated or comma-separated.
-# The transcripts stay in draft/build/<job>/<job>.log (tools/thesis_check.py reads them) and only
-# file:line errors are printed. Each TeX run is limited to THESIS_TEX_TIMEOUT seconds (default 600).
+# something, lualatex twice, then again while the log asks for a rerun (at most three more
+# passes). A failing job does not stop the others. The transcripts stay in
+# draft/build/<job>/<job>.log (tools/thesis_check.py reads them) and only file:line errors are
+# printed. Each TeX run is limited to THESIS_TEX_TIMEOUT seconds (default 600).
 # A job whose previous build did not finish (an error, a timeout, a kill) starts again from an
 # empty draft/build/<job>/: a killed run leaves .aux/.toc/.bbl files cut off mid-line.
 #
@@ -46,7 +43,6 @@ die_usage() {
 
 # --- Arguments --------------------------------------------------------------------------------
 jobs=()
-only=()
 add_job() {
   local job="$1" existing
   for existing in "${jobs[@]+"${jobs[@]}"}"; do
@@ -58,16 +54,6 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     main | review | submission | supplementary) add_job "$1" ;;
     all) for job in main review submission supplementary; do add_job "${job}"; done ;;
-    --only)
-      [ "$#" -ge 2 ] || die_usage "--only needs a chapter stem, e.g. --only 02-study1"
-      IFS=',' read -r -a parts <<< "$2"
-      only+=("${parts[@]+"${parts[@]}"}")
-      shift
-      ;;
-    --only=*)
-      IFS=',' read -r -a parts <<< "${1#--only=}"
-      only+=("${parts[@]+"${parts[@]}"}")
-      ;;
     -h | --help)
       usage
       exit 0
@@ -78,37 +64,6 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "${#jobs[@]}" -eq 0 ]; then
   jobs=(main supplementary)
-fi
-
-# active_includes: the \include paths of main.tex, ignoring commented-out lines.
-active_includes() {
-  sed 's/\([^\\]\)%.*$/\1/; s/^%.*$//' "${draft_dir}/main.tex" |
-    grep -o '\\include{[^}]*}' | sed 's/^\\include{\(.*\)}$/\1/'
-}
-
-# --only applies to the review copy: resolve each stem to the \include path in main.tex.
-include_only=""
-only_suffix=""
-if [ "${#only[@]}" -gt 0 ]; then
-  case " ${jobs[*]} " in
-    *" review "*) ;;
-    *) die_usage "--only is for the review job (bash draft/compile.sh review --only 02-study1)" ;;
-  esac
-  for stem in "${only[@]}"; do
-    stem="${stem%.tex}"
-    [ -n "${stem}" ] || die_usage "--only got an empty chapter stem"
-    case "${stem}" in
-      */*) path="${stem}" ;;
-      *) path="chapters/${stem}" ;;
-    esac
-    [ -f "${draft_dir}/${path}.tex" ] || die_usage "--only: draft/${path}.tex does not exist"
-    # Only an active (uncommented) \include in main.tex can be selected by \includeonly.
-    if ! active_includes | grep -qxF "${path}"; then
-      die_usage "--only: main.tex has no active \\include{${path}}"
-    fi
-    include_only="${include_only:+${include_only},}${path}"
-    only_suffix="${only_suffix}-${path##*/}"
-  done
 fi
 
 # --- Stale files from builds inside draft/ ----------------------------------------------------
@@ -186,22 +141,23 @@ run_tex() {
   fi
 }
 
-# build <name> <source> <pdf> [seeded]: lualatex, BibTeX when the document has a bibliography
-# and cites something, lualatex twice more, then move the PDF to draft/<pdf>. `seeded` keeps the
-# auxiliary files that seed_partial copied into the job's directory.
+# build <name> <source>: lualatex, BibTeX when the document has a bibliography and cites
+# something, lualatex twice more and again while the log asks for a rerun (at most three more
+# passes: a fresh review copy needs one for lineno's page-wise line numbers), then move the PDF
+# to draft/<name>.pdf.
 build() {
-  local name="$1" source="$2" pdf="$3" seeded="${4:-}" dir="${build_root}/$1" status=0 pages
+  local name="$1" source="$2" pdf="$1.pdf" dir="${build_root}/$1" status=0 pages n=0
   echo "Building ${pdf}"
   # Unless the last build of this job completed, start from an empty directory. A lualatex or
   # BibTeX run stopped by THESIS_TEX_TIMEOUT, a kill or a closed terminal leaves its files cut
   # off mid-line, and a failed run can leave a .toc/.lof entry that breaks the next run; TeX
   # reads both at \begin{document} before rewriting them, so every later build would stop
-  # there even after the source is fixed. The three passes below rebuild every auxiliary file.
-  if [ -z "${seeded}" ] && [ ! -f "${dir}/.build-complete" ]; then
+  # there even after the source is fixed. The passes below rebuild every auxiliary file.
+  if [ ! -f "${dir}/.build-complete" ]; then
     rm -rf "${dir}"
   fi
   mkdir -p "${dir}"
-  # Present only after a complete, successful build (seed_partial relies on it).
+  # Present only after a complete, successful build.
   rm -f "${dir}/.build-complete"
   # \include{chapters/x} writes <dir>/chapters/x.aux and TeX does not create that directory
   # itself: mirror the subdirectories of draft/.
@@ -235,6 +191,10 @@ build() {
   fi
   run_tex "${dir}" "${name}" "${source}"
   run_tex "${dir}" "${name}" "${source}"
+  while [ "${n}" -lt 3 ] && grep -qE 'Rerun to get|re-run to get it right' "${dir}/${name}.log"; do
+    run_tex "${dir}" "${name}" "${source}"
+    n=$((n + 1))
+  done
   mv "${dir}/${name}.pdf" "${draft_dir}/${pdf}"
   touch "${dir}/.build-complete"
   pages=""
@@ -250,89 +210,27 @@ build() {
   fi
 }
 
-# review_is_current: true when draft/build/review/ holds a complete, successful review build
-# that is newer than everything it reads (draft sources, hand-made figures, projects/*/result/).
-review_is_current() {
-  local full="${build_root}/review" marker="${build_root}/review/.build-complete" path
-  [ -f "${marker}" ] && [ -f "${full}/review.aux" ] || return 1
-  while IFS= read -r path; do
-    [ -f "${full}/${path}.aux" ] || return 1
-  done < <(active_includes)
-  # Top-level draft/*.pdf are outputs, not sources.
-  if (cd "${draft_dir}" && find . -path ./build -prune -o -type f -newer "${marker}" -print) |
-    grep -qvE '^\./[^/]*\.pdf$'; then
-    return 1
-  fi
-  if [ -d "${draft_dir}/../projects" ] &&
-    [ -n "$(cd "${draft_dir}/../projects" && find . -path '*/result/*' -type f -newer "${marker}" \
-      -print 2> /dev/null | head -n 1)" ]; then
-    return 1
-  fi
-  return 0
-}
-
-# seed_partial <name>: a partial review build (\includeonly) is a continuation of the full
-# review build. It takes the chapter numbers, labels, citations and the line-number data of
-# the chapters it leaves out from their .aux files, and those must match the current text:
-# lineno's page-wise numbering loops forever on line numbers from two different layouts.
-# So rebuild the full review copy unless it is current, then start the partial build from
-# a copy of its .aux, .toc, .lof, .lot and .bbl files.
-seed_partial() {
-  local name="$1" dir="${build_root}/$1" full="${build_root}/review" ext
-  if ! review_is_current; then
-    echo "Building the full review copy first: the partial copy takes its numbering from it"
-    build review '\def\ThesisBuildStamp{'"${stamp}"'}\input{review.tex}' review.pdf
-  fi
-  rm -rf "${dir}"
-  mkdir -p "${dir}"
-  for ext in aux toc lof lot bbl; do
-    if [ -f "${full}/review.${ext}" ]; then
-      cp "${full}/review.${ext}" "${dir}/${name}.${ext}"
-    fi
-  done
-  (cd "${full}" && find . -mindepth 2 -type f -name '*.aux' -print0) |
-    while IFS= read -r -d '' aux; do
-      aux="${aux#./}"
-      mkdir -p "${dir}/$(dirname -- "${aux}")"
-      cp "${full}/${aux}" "${dir}/${aux}"
-    done
-}
-
 # --- Jobs -------------------------------------------------------------------------------------
 failed=()
 built=()
 for job in "${jobs[@]}"; do
-  name="${job}"
-  pdf="${job}.pdf"
   case "${job}" in
     main) source='\def\ThesisBuildStamp{'"${stamp}"'}\input{main.tex}' ;;
-    review)
-      source='\def\ThesisBuildStamp{'"${stamp}"'}\input{review.tex}'
-      if [ -n "${include_only}" ]; then
-        name="review${only_suffix}"
-        pdf="${name}.pdf"
-        source='\def\ThesisBuildStamp{'"${stamp}"'}\def\ThesisIncludeOnly{'"${include_only}"'}\input{review.tex}'
-      fi
-      ;;
+    review) source='\def\ThesisBuildStamp{'"${stamp}"'}\input{review.tex}' ;;
     submission) source='\input{submission.tex}' ;;
     supplementary) source='\input{supplementary.tex}' ;;
   esac
   set +e
   (
     set -e
-    if [ "${name}" != "${job}" ]; then
-      seed_partial "${name}"
-      build "${name}" "${source}" "${pdf}" seeded
-    else
-      build "${name}" "${source}" "${pdf}"
-    fi
+    build "${job}" "${source}"
   )
   status=$?
   set -e
   if [ "${status}" -eq 0 ]; then
-    built+=("${name}")
+    built+=("${job}")
   else
-    failed+=("${name}")
+    failed+=("${job}")
   fi
 done
 
@@ -345,7 +243,8 @@ for name in "${built[@]+"${built[@]}"}"; do
     status=1
   fi
   if grep -q 'Package thesis Warning: Values file' "${log}"; then
-    echo "Note: ${name} registers values files that are not generated yet (draft/values.tex)" >&2
+    echo "Note: ${name} registers values files that do not exist (draft/values.tex): fix the" \
+      "path, copy projects/_template/values.tex to projects/<id>/values.tex, or delete the line" >&2
   fi
   if grep -q 'Package thesis Warning: Undefined value' "${log}"; then
     echo "Note: ${name} uses undefined \\val keys, typeset as ??: run make check" >&2

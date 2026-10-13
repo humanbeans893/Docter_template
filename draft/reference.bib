@@ -8,8 +8,11 @@
 % Check every number quoted from it against the original text as well. Record the
 % check in a `verified` field:
 %   verified = {YYYY-MM-DD, doi:10.xxxx/yyyy},
-% Without a DOI use isbn:<ISBN> or url:<official page> instead of doi:. make check
-% lists entries without `verified` (an error with make check-final) and duplicate DOIs.
+% Without a DOI use isbn:<ISBN> or url:<official page> instead of doi:. Your own
+% unpublished paper is checked against its manuscript instead: the research repo and
+% commit as in research.json `source`, a colon and the manuscript path (AGENTS.md).
+% make check lists entries without `verified` (an error with make check-final) and
+% duplicate DOIs.
 %
 % Citation keys: authYYYYfirstword (e.g. smith2020ocean). Remove private or
 % machine-specific fields (file, local-url, annotation, personal notes) first.

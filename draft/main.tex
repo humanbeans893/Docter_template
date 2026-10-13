@@ -1,31 +1,23 @@
 % !TEX program = lualatex
-\documentclass[a4paper,11pt,english,oneside]{ltjsreport}
-
+% The dissertation (draft copy). review.tex and submission.tex load this file in their modes.
+% Build with make pdf (bash draft/compile.sh); metadata and switches are in thesis-config.tex.
 \input{thesis-config}
+\documentclass[english,\ThesisClassOptions]{ltjsreport}
 \input{preamble}
-% bash draft/compile.sh review --only <chapter> defines \ThesisIncludeOnly: a partial review
-% copy that keeps the chapter numbers and cross-references of the full one.
-\ifdefined\ThesisIncludeOnly\includeonly{\ThesisIncludeOnly}\fi
-
-\title{\ThesisTitleEN}
-\author{\ThesisAuthorEN}
-\date{\ThesisSubmissionDateEN}
 
 \begin{document}
 
-% The title page is unnumbered and must not create a duplicate PDF page anchor. It is set
-% single-spaced so that the wider spacing of the review copy keeps it on one page.
+% Title page: unnumbered and without a PDF page anchor (a duplicate otherwise), single-spaced
+% so that the review copy's wider spacing keeps it on one page.
 \hypersetup{pageanchor=false}
 \pagenumbering{gobble}
 \begingroup\setstretch{1}\input{frontmatter/titlepage}\endgroup
-\clearpage
+\cleardoublepage
 
-% Front matter uses lower-case Roman numerals. Line numbers of the review copy start here.
+% Front matter: Roman page numbers. The review copy numbers lines from here.
 \hypersetup{pageanchor=true}
 \pagenumbering{roman}
 \ThesisStartLineNumbers
-\setcounter{page}{1}
-
 \ifThesisIncludeDeclaration
   \input{frontmatter/declaration}
 \fi
@@ -35,12 +27,13 @@
 \ifThesisIncludePublications
   \input{frontmatter/publications}
 \fi
-
 \tableofcontents
 \ifThesisPrintListOfFigures
+  \cleardoublepage\phantomsection\addcontentsline{toc}{chapter}{\listfigurename}
   \listoffigures
 \fi
 \ifThesisPrintListOfTables
+  \cleardoublepage\phantomsection\addcontentsline{toc}{chapter}{\listtablename}
   \listoftables
 \fi
 \ifThesisIncludeAbbreviations
@@ -50,29 +43,26 @@
   \input{frontmatter/symbols}
 \fi
 
-% Main matter restarts at Arabic page 1.
-\clearpage
+% Main matter: Arabic page numbers from 1.
+\cleardoublepage
 \pagenumbering{arabic}
-\setcounter{page}{1}
 
 \include{chapters/01-introduction}
-% Optional background chapter: copy chapters/_background-template.tex to
-% chapters/background.tex, drop its template-only block, and uncomment:
+% Optional background chapter (copy chapters/_background-template.tex):
 % \include{chapters/background}
 
-% Study chapters in thesis order. tools/new_study.py inserts a new chapter above
-% the end marker; reorder the lines by hand when the argument needs another order.
-\include{chapters/02-study1}
-% thesis:study-chapters:end
+% Research chapters: one per research.json entry with a chapter, in the same order.
+\include{chapters/study1}
 
 \include{chapters/99-conclusion}
 
-% Placeholder so a fresh clone shows the References chapter. Delete this \nocite
-% and its reference.bib entry as soon as the first real citation is added.
+% Placeholder so that a fresh clone shows the References chapter: delete this \nocite and its
+% reference.bib entry when the first real citation is added.
 \nocite{lamport1994latex}
 \bibliographystyle{unsrtnat}
 \bibliography{reference}
 
+% Appendices: backmatter/appendix-<id>.tex per research (\label{app:<id>}), in chapter order.
 \appendix
 \include{backmatter/appendix-a}
 

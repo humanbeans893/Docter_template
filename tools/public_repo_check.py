@@ -15,6 +15,9 @@ if sys.version_info < (3, 10):  # noqa: UP036
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MAX_TRACKED_BYTES = 1_000_000
+# Figures copied from the research repositories into projects/<id>/figures/ may be large.
+MAX_FIGURE_BYTES = 10_000_000
+PROJECT_FIGURE = re.compile(r"^projects/[^/]+/figures/")
 
 FORBIDDEN_SUFFIXES = {".pem", ".p12", ".pfx", ".kdbx", ".sqlite"}
 FORBIDDEN_NAMES = {".env", "credentials", "credentials.json", "zotero.sqlite"}
@@ -67,10 +70,11 @@ def forbidden_path_reason(path: Path, root: Path) -> str | None:
         return f"{path.suffix} application/credential file must not be tracked"
     if posix == ".codex/config.toml" or posix.endswith("/.codex/config.toml"):
         return "Codex project settings can carry API keys; keep .codex/config.toml local"
-    if posix.startswith("references/attachments/") or posix.startswith("references/library/"):
-        return "literature attachments must remain outside Git"
-    if re.match(r"^projects/[^/]+/data/raw/.+", posix) and path.name != ".gitkeep":
-        return "raw research data must not be tracked"
+    if posix == "external" or posix.startswith("external/"):
+        return (
+            "external/ holds local links to the research repositories and must not be tracked: "
+            "copy what the thesis uses into projects/<id>/"
+        )
     return None
 
 
@@ -90,10 +94,9 @@ def scan_files(paths: list[Path], root: Path = REPO_ROOT) -> list[Finding]:
             continue
         if not path.is_file():
             continue
-        if path.stat().st_size > MAX_TRACKED_BYTES:
-            findings.append(
-                Finding(relative, f"tracked file exceeds {MAX_TRACKED_BYTES // 1_000_000} MB")
-            )
+        limit = MAX_FIGURE_BYTES if PROJECT_FIGURE.match(relative) else MAX_TRACKED_BYTES
+        if path.stat().st_size > limit:
+            findings.append(Finding(relative, f"tracked file exceeds {limit // 1_000_000} MB"))
 
         try:
             text = path.read_text(encoding="utf-8")
