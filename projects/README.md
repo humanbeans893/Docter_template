@@ -23,10 +23,12 @@ projects/<study>/
 │   └── utils/experiment.py, figures.py, tables.py, provenance.py   # 実験の実行の仕組み、図・表・数値の書き出しと来歴、過去の結果の検証
 ├── scripts/                 # 実行入口(薄く保つ。昇格スクリプトもここ)
 ├── result/{figures,tables,animations}/    # 論文に使う生成物(手で編集しない)
-├── tests/                   # スタディ携行テスト(複製直後から通る)
+├── tests/                   # スタディ自身のコードのテスト(複製直後から通る)
 ├── config.py                # スタディ内の場所 + 論文共通の図の体裁・定数(結果を変えうる値は実験の params.py へ)
 └── README.md
 ```
+
+`src/utils/` のヘルパーと実験の雛形(`experiments/_template`・`_import_template`)は、どのスタディでも `_template/` の写しです。テストはリポジトリの `tests/study_kit/` に一度だけあり、`_template/` のものを検査します。直し方は `CONTRIBUTING.md` の「ヘルパーと実験の雛形を変えるとき」にあります。
 
 ## 新しいスタディを作る
 

@@ -7,7 +7,7 @@
 > TITLE='Study 2: Title' make study NAME=<スタディ名>
 > ```
 >
-> `tools/new_study.py` がこのディレクトリを `projects/<スタディ名>/` に複製し、論文への登録(章ファイル・`\graphicspath`・raw の読み取り専用マウント・`docs/thesis-plan.md` の行)まで行います。そのときこの囲みは消え、`<study>` はスタディ名に、`<Study title>` は章の題に置き換わります。雛形を直したら `make test` で、雛形そのものと複製の両方が通ることを確かめます。
+> `tools/new_study.py` がこのディレクトリを `projects/<スタディ名>/` に複製し、論文への登録(章ファイル・`\graphicspath`・raw の読み取り専用マウント・`docs/thesis-plan.md` の行)まで行います。そのときこの囲みは消え、`<study>` はスタディ名に、`<Study title>` は章の題に置き換わります。雛形を直したら `make test` で、雛形そのもの(`tests/study_kit/`)と複製(`tests/test_new_study.py`)の両方が通ることと、既存のスタディの写しが雛形と一致すること(`tests/test_study_copies.py`)を確かめます。
 <!-- template-only:end -->
 
 博士論文のスタディ `<study>` です。このスタディのデータ・コード・実験・結果は、このディレクトリの中で完結させます(他のスタディのコードを import しない)。
@@ -108,4 +108,6 @@ docker compose exec research-template uv run python projects/<study>/scripts/<�
 docker compose exec research-template uv run pytest projects/<study>
 ```
 
-`tests/` はスタディと一緒に持ち運べるテストで、複製した直後から通ります。`src/` に関数を足したら `tests/` にテストも足します。既存の `test_figures_helper.py` などが書き方の見本です。
+`tests/` はこのスタディ自身のコード(`src/` と `scripts/`)のテストを置く場所で、複製した直後から通ります。`src/` に関数を足したら `tests/` にテストも足します。最初の `test_study_config.py` が書き方の見本で、スタディのモジュールは `conftest.py` の `load_module_by_path` でファイルのパスから読み込みます(どのスタディも同じ名前の `config.py`・`src` を持つため)。
+
+`src/utils/` のヘルパーと実験の雛形は全スタディ共通で、テストはリポジトリの `tests/study_kit/` にあります。直すときは `projects/_template` で直して全スタディへ写します(`AGENTS.md` の「研究コード」)。

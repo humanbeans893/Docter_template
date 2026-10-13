@@ -61,8 +61,9 @@ known-first-party = ["config", "params", "src"]
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests", "projects"]
-# importlib mode is load-bearing: every study ships identically named
-# tests/config.py modules, and only importlib gives them unique identities.
+# importlib mode is load-bearing: every study ships identically named test modules
+# (tests/conftest.py, tests/test_study_config.py), and only importlib gives them unique
+# identities.
 addopts = "-ra --import-mode=importlib --strict-markers"
 # Keep the cache off the bind-mounted repository (AGENTS.md, environment rules).
 cache_dir = "$HOME/.cache/pytest"

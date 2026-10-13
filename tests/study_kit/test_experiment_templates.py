@@ -1,8 +1,9 @@
-"""Run the experiment templates end to end in a hermetic copy of this study.
+"""Run projects/_template's experiment templates end to end in a hermetic copy of it.
 
 The copy reproduces the layout the templates rely on (repo-root config.py +
 projects/<study>/{config.py, src/, experiments/{_template,_import_template}}) inside
-tmp_path, so the runs never touch this study's data/, result/ or experiments/. Tests that
+tmp_path, so the runs never touch the repository's data/, result/ or experiments/. Every
+study's templates are copies of these (tests/test_study_copies.py). Tests that
 check what the provenance records say about the code commit the copy first (commit_all).
 """
 

@@ -18,7 +18,7 @@
 - `draft/` — 博士論文(LuaLaTeX `ltjsreport`、本文は英語、要旨は和英)と補足資料。
 - `tools/` — 標準ライブラリだけのツール(`thesis_check.py`、`new_study.py`、`new_experiment.py`、`archive_thesis.py`、`public_repo_check.py`)。ホストの `python3`(3.10 以上)で動く。
 - `docs/` — 人間向けの文書(論文計画、取り込みの手引き、繰り返さないこと、案、研究ログ、意思決定記録、レビュー、指摘への対応)。使い方は `docs/README.md`。
-- `STATE.md` — 運用状態の単一ページ。`tests/` — リポジトリ全体の構造と制約のテスト。
+- `STATE.md` — 運用状態の単一ページ。`tests/` — リポジトリ全体の構造と制約のテストと、全スタディ共通のヘルパーと実験の雛形のテスト(`tests/study_kit/`)。
 
 ## コマンド
 
@@ -141,7 +141,7 @@ make hooks                 # pre-commit を入れる   make precommit: 全ファ
 
 ### 実行
 
-- `run.py` は全体を `with experiment.start(__file__, params) as run:` で包む(`src/utils/experiment.py`)。冒頭の sys.path の処理と `import config`・`from src.utils import …`(experiment・figures・tables)は消さず、関数の中へ移さない(スタディはパッケージとして入っていない)。記録や進捗のコードは `run.py` に書かず、`experiment.py` を直す。
+- `run.py` は全体を `with experiment.start(__file__, params) as run:` で包む(`src/utils/experiment.py`)。冒頭の sys.path の処理と `import config`・`from src.utils import …`(experiment・figures・tables)は消さず、関数の中へ移さない(スタディはパッケージとして入っていない)。記録や進捗のコードは `run.py` に書かず、`experiment.py` を直す(直し方は「研究コード」)。
 - 先に `--smoke`(`params.SMOKE` を当てた小さな実行。`out/smoke/` に書き、`result/` を変えない。段階ごとの所要時間が本実行の見積もりになる)、それから本実行。完了した本実行は `--overwrite` なしでは繰り返せない(残すなら新しい実験にする)。記録は `out/params_used.json`(状態・シード・パラメータ・コミットと未コミットのコード・段階の時刻・出したファイル)。
 - 作業用の出力は `run.out()` で自分の `out/` へ。論文や他の実験が使うものはコードで出す: 図は `save_figure`(過去の画像は `import_figure`)、表は `write_latex_table`、本文の数値は `write_latex_values`、それ以外のファイルは `run.promote()`(`result/tables/` へ。大きな出力は `dest_dir=config.PROCESSED_DATA_DIR / run.name`)。実行中はどれも `out/staged/` に置かれ、**本実行が最後まで通ったときだけ** `result/`(と `data/processed/NNN_<slug>/`)にまとめて入る(失敗・中断・`--smoke` では変わらない。公開中の強制終了は `make check` の E12 が知らせ、次の本実行が戻す)。手でコピーせず、論文や他の実験から `out/` を読まず、他の実験の `run.py` を import しない。2つ目の実験が必要とするロジックは `src/` へ移す。
 - 本実行の前に、`summary.md` の問いと判定の規則・`params.py`・`run.py` と変えたコードをコミットする。コード(そのスタディの `src/`・`scripts/`・`config.py`・`experiments/` の `.py`、ルートの `config.py`・`pyproject.toml`・`uv.lock`)に未コミットの変更があったり、実行中に変わったりすると(同じスタディで新しい実験を作ることも含む)、その後に書いた生成物は未コミットのコードの扱いになる(由来記録の `git_dirty`、`make check` の W15)。原稿・文書・`STATE.md`・`result/` の変更は数えない。
@@ -176,6 +176,7 @@ make hooks                 # pre-commit を入れる   make precommit: 全ファ
 ## 研究コード
 
 - 再利用するロジックは `src/`(`utils/`・`models/`・`methods/`・`analysis/`)、薄い実行入口は `scripts/`、試行錯誤は `experiments/`。
+- `src/utils/` のヘルパー(`experiment.py`・`figures.py`・`tables.py`・`provenance.py`)と実験の雛形(`experiments/_template`・`_import_template`)は全スタディ共通。直すときは `projects/_template` で直して `tests/study_kit/` のテストを通し、全スタディへ写す(雛形は `<study>` をスタディ名に置き換えて)。スタディの写しだけを直さない。写し忘れは `tests/test_study_copies.py` が知らせる。スタディ固有の補助は `src/utils/` に別のモジュールとして足してよい。
 - 失敗は明示する。必須の入力は `assert` などで分かりやすい文言とともに検証し、既定値やダミー値で処理を続けない。例外を黙って握りつぶさない。広い `try`/`except` は、その失敗を意図して扱うときだけ使う。試し書きの既定値は、`src/` やスクリプトへ移す前に明示的な検証に直す。
 - 図表と数値の名前は `<study>-<slug>`(全スタディで一つの名前空間。`make check` の W16 が接頭辞を検査する)。
 - スタディの `config.py` の名前を使う(`STUDY_ROOT`、`RAW_DATA_DIR`、`FIGURE_DIR`、`TABLE_DIR`、`EXPERIMENTS_DIR` など)。research-template の名前 `PROJECT_ROOT`・`DATA_ROOT` と古い名前 `EXP_DIR`(`EXPERIMENTS_DIR` と同じ)も使えるが、`PROJECT_ROOT` はスタディのルートで、`DRAFT_DIR` と `/data` は無い。書き込みは `*_DIR` の下だけにする。
@@ -212,6 +213,7 @@ make hooks                 # pre-commit を入れる   make precommit: 全ファ
 ## 何をテストするか
 
 - 解析の正しさを担保するもの: 答えの分かっている合成データでの推定、単位・分母・丸めの独立な計算との照合、再現の入口(誤った入力で止まる、既存の結果を上書きしない)。各スタディの `projects/<study>/tests/` に置き、複製した直後から通る状態を保つ。
+- 全スタディ共通のヘルパーと実験の雛形: `tests/study_kit/` が `projects/_template` のものを一度だけ検査する。各スタディの写しが同じであることは `tests/test_study_copies.py` が確かめる。
 - システムの制約: 実行環境と読み取り専用の生データ(`tests/test_runtime_constraints.py`)、引き継ぎの構造(`tests/test_repo_structure.py`)、雛形と登録の整合(`tests/test_template_integrity.py`)、各ツールとフック(`tests/test_*.py`)。
 - 原稿は、PDF を黙って壊す構造だけを検査する(参照・引用・図・値・由来。`tools/thesis_check.py`)。見出し・語数・文言・主張は固定しない。文章は著者が確かめる。
 - テストを足すのは、新しい計算・実際に起きた不具合・システムの制約に対して。文章を直すたびに増えるテストは、やがて実行されなくなる。

@@ -149,7 +149,7 @@ EXTERNAL_FILES_DIR=/absolute/path/to/synced/research-files
 │       ├── src/               # 再利用コード(utils/ に図・表・数値・由来の補助関数)
 │       ├── scripts/           # 薄い実行入口・昇格用スクリプト
 │       ├── result/            # 論文に使う図・表・数値(コードが書く。手で編集しない)
-│       ├── tests/             # スタディのテスト(複製した直後から通る)
+│       ├── tests/             # スタディ自身のコードのテスト(複製した直後から通る)
 │       └── config.py          # スタディ内のパス(結果を変えうる値は実験の params.py に置く)
 ├── draft/                     # 博士論文(LuaLaTeX)。main / review / submission / supplementary
 │   ├── chapters/              # 序論・各スタディの章・結論、章と背景章の雛形
@@ -160,7 +160,7 @@ EXTERNAL_FILES_DIR=/absolute/path/to/synced/research-files
 │   └── compile.sh             # ビルド(中間ファイルは draft/build/)
 ├── docs/                      # 論文計画・取り込みの手引き・繰り返さないこと・案・研究ログ・意思決定記録・レビュー・指摘
 ├── tools/                     # 標準ライブラリだけのツール(原稿の検査、スタディ・実験の作成、提出物の保存、公開前の検査)
-├── tests/                     # リポジトリ全体の構造と制約のテスト
+├── tests/                     # リポジトリ全体の構造と制約のテスト。study_kit/ は全スタディ共通のヘルパーのテスト
 ├── .claude/ ・ .agents/        # Claude Code と Codex のスキル
 ├── STATE.md                   # 運用状態(セッションの最初に読む)
 ├── AGENTS.md                  # エージェント向けの規約の正本

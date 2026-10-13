@@ -15,6 +15,10 @@
 - 再現に必要なデータの情報は各スタディの `data/README.md` に記録します。過去の結果は `make experiment-import` で取り込み実験を作り、由来と再現性を記録してから使います([docs/importing-past-results.md](docs/importing-past-results.md))。
 - 研究結果の図表と本文中の数値は、スクリプトから再生成できる状態にしてください。図表はコードで `result/` に書き出し、本文の数値は生成した値(`\val{...}`)で参照します。
 
+## ヘルパーと実験の雛形を変えるとき
+
+各スタディの `src/utils/`(実行の仕組みと、図・表・数値・由来のヘルパー)と `experiments/_template`・`experiments/_import_template` は、`projects/_template` の写しです。直すときは `projects/_template` で直し、`tests/study_kit/` のテストを通してから(振る舞いを変えたらテストも足します)、全スタディへ写します(実験の雛形は `<study>` をスタディ名に置き換えます)。写し忘れや、スタディの写しだけを直したものは `tests/test_study_copies.py` が知らせます。スタディ固有の補助関数は `src/utils/` に別のモジュールとして足せます。
+
 ## フック(`.claude/hooks/protect_raw_data.py`)を変えるとき
 
 このフックはすべての Bash・Edit・Write の前に動き、失敗すると止める側に倒れるので、書きかけのフックはセッションのすべてのツール呼び出しを止めます。新しい版は別の場所に全体を書き、import できることと `tests/test_protect_raw_data_hook.py` が通ることを確かめてから、1回の `cp` で置き換えます。何回かに分けて直接編集しません。

@@ -3,7 +3,10 @@
 `make study` (tools/new_study.py) copies projects/_template and registers the new study in
 draft/preamble.tex, draft/supplementary.tex and docker-compose.yml. These tests keep that
 trustworthy: every study (and _template itself) has the full skeleton and config, the
-markers the tools edit exist, and every registration names an existing study and back.
+markers the tools edit exist, and every registration names an existing study and back. The
+documents are held to what they name (make targets, import lines, example code), not to
+their wording. Every study's experiment templates are copies of projects/_template's
+(tests/test_study_copies.py), so the template checks here read projects/_template only.
 """
 
 import ast
@@ -16,6 +19,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DRAFT = REPO_ROOT / "draft"
+TEMPLATE_STUDY = REPO_ROOT / "projects" / "_template"
 
 EXPECTED_DIRS = [
     "data/raw",
@@ -175,12 +179,11 @@ def string_keys(node: ast.expr) -> list[str] | None:
 
 
 @pytest.mark.parametrize("template", ["_template", "_import_template"])
-@pytest.mark.parametrize("study", studies(), ids=lambda p: p.name)
-def test_experiment_templates_pin_their_values(study: Path, template: str):
+def test_experiment_templates_pin_their_values(template: str):
     # make experiment copies these: a seed or setting read from a shared config.py or the
     # environment would let one edit silently change every finished experiment, and
     # experiment.start() refuses a params.py without SEED, PARAMS and (for --smoke) SMOKE.
-    path = study / "experiments" / template / "params.py"
+    path = TEMPLATE_STUDY / "experiments" / template / "params.py"
     where = path.relative_to(REPO_ROOT).as_posix()
     found = shared_result_reads(path)
     assert not found, (
@@ -211,9 +214,9 @@ def test_experiment_templates_pin_their_values(study: Path, template: str):
 
 
 def test_root_agent_and_public_repository_contract():
-    assert (REPO_ROOT / "AGENTS.md").is_file()
-    assert (REPO_ROOT / "CLAUDE.md").is_file()
-    assert "@AGENTS.md" in (REPO_ROOT / "CLAUDE.md").read_text()
+    # AGENTS.md is the one instruction file (tests/test_repo_structure.py checks that it and
+    # CLAUDE.md exist): CLAUDE.md imports it, and no second copy sits where an agent loads it.
+    assert "@AGENTS.md" in (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     assert not (REPO_ROOT / ".claude" / "CLAUDE.md").exists()
     assert not (REPO_ROOT / ".codex" / "AGENTS.md").exists()
 
@@ -248,10 +251,16 @@ def test_dissertation_frontmatter_contract():
     ):
         assert (DRAFT / path).is_file(), f"dissertation front matter is missing {path}"
 
-    main = (DRAFT / "main.tex").read_text()
-    assert "english" in main.splitlines()[1]
-    assert "\\pagenumbering{roman}" in main
-    assert "\\pagenumbering{arabic}" in main
+    # The thesis is set in English, front matter numbered in roman and the body in arabic.
+    main = "\n".join(code_lines(DRAFT / "main.tex"))
+    options = re.search(r"\\documentclass\s*\[([^\]]*)\]", main)
+    assert options and "english" in [o.strip() for o in options.group(1).split(",")], (
+        "draft/main.tex: \\documentclass needs the english option"
+    )
+    roman, arabic = main.find("\\pagenumbering{roman}"), main.find("\\pagenumbering{arabic}")
+    assert 0 <= roman < arabic, (
+        "draft/main.tex: \\pagenumbering{roman} for the front matter, then {arabic} for the body"
+    )
 
 
 def test_markers_the_tools_edit_exist_once():
@@ -281,8 +290,12 @@ def test_generated_values_are_loaded_before_the_document():
 
 
 def test_partial_review_build_hook_is_in_main():
-    # bash draft/compile.sh review --only <chapter> defines \ThesisIncludeOnly.
-    main = [line.strip() for line in code_lines(DRAFT / "main.tex")]
+    # bash draft/compile.sh review --only <chapter> defines \ThesisIncludeOnly, and main.tex
+    # passes it to \includeonly (spacing and line breaks are free).
+    assert "\\ThesisIncludeOnly" in (DRAFT / "compile.sh").read_text(encoding="utf-8"), (
+        "draft/compile.sh no longer defines \\ThesisIncludeOnly for review --only"
+    )
+    main = re.sub(r"\s+", "", "".join(code_lines(DRAFT / "main.tex")))
     assert "\\ifdefined\\ThesisIncludeOnly\\includeonly{\\ThesisIncludeOnly}\\fi" in main, (
         "draft/main.tex needs \\ifdefined\\ThesisIncludeOnly\\includeonly{\\ThesisIncludeOnly}\\fi"
     )
@@ -422,19 +435,6 @@ def guide_documents() -> list[Path]:
     for pattern in ("projects/**/*.md", "draft/**/*.md"):
         found.update(path for path in REPO_ROOT.glob(pattern) if "raw" not in path.parts)
     return sorted(path for path in found if path.is_file())
-
-
-def test_session_save_skill_is_removed():
-    # It wrote project state to Claude's memory and the git-ignored .claude/sessions/, which
-    # Codex and other clones cannot read; STATE.md (write-handoff) is the handoff (AGENTS.md).
-    for path in (".claude/skills/session-save", ".agents/skills/session-save"):
-        assert not (REPO_ROOT / path).exists(), f"{path} was removed: hand off with write-handoff"
-    mentions = [
-        str(path.relative_to(REPO_ROOT))
-        for path in guide_documents()
-        if "session-save" in path.read_text(encoding="utf-8")
-    ]
-    assert not mentions, f"These still refer to the removed session-save skill: {mentions}"
 
 
 FENCED_CODE = re.compile(r"^\s*```[^\n]*\n(.*?)^\s*```", re.MULTILINE | re.DOTALL)

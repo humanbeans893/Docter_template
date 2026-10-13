@@ -387,7 +387,7 @@ def git(repo: Path, *args: str) -> str:
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
 def test_figures_are_credited_to_the_code_the_run_started_from(
-    tmp_path, load_module_by_path, capsys
+    tmp_path, study_root, load_module_by_path, capsys
 ):
     repo = tmp_path
     for name, text in {
@@ -401,7 +401,7 @@ def test_figures_are_credited_to_the_code_the_run_started_from(
     target = repo / "projects" / "demo" / "src" / "utils" / "figures.py"
     target.parent.mkdir(parents=True, exist_ok=True)
     for name in ("figures.py", "experiment.py"):  # figures.py loads experiment.py beside it
-        source = Path(__file__).resolve().parents[1] / "src" / "utils" / name
+        source = study_root / "src" / "utils" / name
         shutil.copyfile(source, target.with_name(name))
     git(repo, "init", "-q")
     git(repo, "add", ".")
