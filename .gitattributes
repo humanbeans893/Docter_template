@@ -1,0 +1,2 @@
+# Shared workflow tools retain upstream whitespace to stay byte-for-byte identical.
+.agent-runs/shared/tools/*.py whitespace=-blank-at-eol

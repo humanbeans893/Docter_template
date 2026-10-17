@@ -72,6 +72,14 @@ Thumbs.db
 .mcp.json
 .codex/config.toml
 
+# Shared workflow ledger: track only its guide and tools, never local run records.
+.agent-runs/*
+!.agent-runs/README.md
+!.agent-runs/shared/
+.agent-runs/shared/*
+!.agent-runs/shared/tools/
+.agent-runs/shared/tools/__pycache__/
+
 # Archived submissions (make archive TAG=...): PDFs, source.tar and manifests per tag.
 /dist/
 
