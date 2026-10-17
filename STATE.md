@@ -2,11 +2,13 @@
 
 新しいセッション(Claude Code / Codex)は最初にこのファイルを読みます。ここには運用状態だけを書き、内容は正本(`AGENTS.md` の「単一の正本」)にリンクします。状態が変わったらその場で直し、完了を報告する前に `write-handoff` スキルで更新します。6000字以内(テストが検査します)。
 
-読む順: このファイル → `research.json` → `docs/thesis-plan.md` → `docs/guardrails.md` → 触る研究の `projects/<id>/README.md`。
+読む順: このファイル → 実行記録(下記) → `research.json` → `docs/thesis-plan.md` → `docs/guardrails.md` → 触る研究の `projects/<id>/README.md`。
 
-- 最終更新: (YYYY-MM-DD HH:MM / 更新者)
-- 段階: 構想 | 取り込み | 執筆 | 推敲 | 審査対応 | 最終提出
-- 現在の焦点: (研究の id か章を書く。例: `study1` の取り込みと章の初稿)
+開始時・引き継ぎ時の実行記録の読み方は [`AGENTS.md` の「動的ワークフロー」](AGENTS.md#動的ワークフロー)を参照します。
+
+- 最終更新: 2026-10-17 16:48 / Codex
+- 段階: 構想
+- 現在の焦点: テンプレートの動的ワークフロー案内と共有台帳の導入・検証を完了。仮の研究 `study1`・章 `draft/chapters/study1.tex` は構想のまま。
 
 ## 待ち
 
@@ -18,7 +20,7 @@
 
 ## 直近の決定事項
 
-- (日付: 決定と理由。今の段階のものだけ。恒久的なものは `docs/decisions/` へ移してここから消す)
+- 2026-10-17: [共有ガイド](DYNAMIC_WORKFLOW.md)と[台帳の案内・道具](.agent-runs/README.md)を原本どおり導入。実行方法は [`AGENTS.md` の「動的ワークフロー」](AGENTS.md#動的ワークフロー)が入口。
 
 ## 未解決の問い
 

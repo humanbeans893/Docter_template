@@ -52,6 +52,10 @@ make submission → make archive TAG=<tag>
 
 `make help` で一覧が出ます。`draft/` の中で `lualatex` を手で実行しないでください。
 
+## エージェントの実行記録
+
+複数のエージェントを動かすときは、共有の[動的ワークフローの運用手引き](DYNAMIC_WORKFLOW.md)に従います。Claude Code・Codex 共通の台帳は [`.agent-runs/`](.agent-runs/README.md) です。開始時・引き継ぎ時の読み方と、このリポジトリでの道具の実行方法は [`AGENTS.md` の「動的ワークフロー」](AGENTS.md#動的ワークフロー)を参照してください。Git には案内と道具だけを残し、実行記録は含めません。
+
 ## ライセンス
 
 このリポジトリのコード・設定・文書・原稿の雛形は [MIT License](LICENSE) です。研究リポジトリや論文から写した図・表・文章、研究データ、第三者の素材には MIT License は適用されません。権利者・出版社の規程・共同研究の契約に従ってください。脆弱性の報告は [SECURITY.md](SECURITY.md)、貢献の手順は [CONTRIBUTING.md](CONTRIBUTING.md) にあります。
