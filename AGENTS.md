@@ -21,6 +21,8 @@ tools/                   標準ライブラリだけのツール(thesis_check.py
 tests/                   リポジトリの構造とツールのテスト(コンテナの pytest)
 external/                任意・Git 管理外: 研究リポジトリの手元のクローンへのリンク(読むだけ)
 STATE.md                 運用状態(セッションの最初に読む)
+DYNAMIC_WORKFLOW.md      動的ワークフローの運用手引き(正本)
+.agent-runs/             Claude Code・Codex 共通の実行記録(案内と道具だけ Git 管理)
 ```
 
 雛形の `study1` は仮の研究で、最初の本当の研究を取り込むときに消します(`add-research` スキル)。
@@ -73,9 +75,23 @@ make security            # 公開前の検査(秘密情報・個人のパス・�
 
 チャットの内容は、次のセッションにも、Claude Code と Codex の切り替えにも残りません。エージェントの記憶にも研究の状態を置きません。残す価値のあることは、起きたその場で正本のファイルに書きます。
 
-- 開始時に読む順: `STATE.md` → `research.json` → `docs/thesis-plan.md` → `docs/guardrails.md` → 触る研究の `projects/<id>/README.md`。
+- 開始時に読む順: `STATE.md` → 下の「動的ワークフロー」の台帳 → `research.json` → `docs/thesis-plan.md` → `docs/guardrails.md` → 触る研究の `projects/<id>/README.md`。
 - 完了を報告する前、ユーザーや研究リポジトリの作業を待つことになったとき、状態が大きく変わったときに、`write-handoff` スキルで `STATE.md` を更新する。
 - 毎回読む文書には文字数の上限がある: `STATE.md` 6000字、`docs/thesis-plan.md` 8000字、`docs/guardrails.md` 8000字(テストが検査する)。あふれたら古いものを研究ログ・意思決定記録へ移す。
+
+## 動的ワークフロー
+
+- 複数のエージェントを動かす動的ワークフローは [`DYNAMIC_WORKFLOW.md`](DYNAMIC_WORKFLOW.md) に従う。
+- 起動前に、作業の内容・段階・作業者の数からトークン使用量と総量を見積もる。
+- 同時実行数は、段階ごとの実測と利用枠の残り・再設定までの時間から決める(固定数や推測で決めない)。
+- Codex が書き、Opus がレビューと最終確認をする。
+- 止まった実行は台帳にブランチごとの続きの地点(次の段階と直前の報告のキー)を残し、新しい実行で続ける。同じ実行の引数を変えて再開しない。
+- Claude Code・Codex の両方が `.agent-runs/` に実行を記録し、[読み書きの手順](.agent-runs/README.md)に従う。
+- セッション開始時と引き継ぎ時は `STATE.md` に続けて `.agent-runs/README.md`、`.agent-runs/sessions.jsonl` の末尾、最新の `.agent-runs/runs/<run>/` の `manifest.json`・`results.json`・`stages.jsonl` を読む(未作成なら初回として扱う)。
+- 開始時と終了時に `index_sessions.py` で一覧を更新し、実行の完了・停止・失敗時に `export_workflow_run.py` で記録を書き出す。
+- 台帳の道具は `.agent-runs/shared/tools/` にあり、ホストで許可された `python3 tools/…` の対象外なのでコンテナで動かす。
+- コマンドは台帳の README の `docker run --rm --network none … <python-image> python3 …` を使い、記録をホストと同じパスに読み取り専用でつなぐ。
+- Codex の段階には、ローカルの `.claude/settings.local.json` に許可規則 `Bash(codex exec --approve-for-me:*)` が必要。この設定はコミットしない。
 
 ## 単一の正本
 
@@ -93,6 +109,8 @@ make security            # 公開前の検査(秘密情報・個人のパス・�
 | 書誌 | `draft/reference.bib` |
 | 手作りの図の由来 | `draft/figures/README.md` |
 | 運用状態・待ち・次の作業 | `STATE.md` |
+| 動的ワークフローの運用手順 | `DYNAMIC_WORKFLOW.md` |
+| エージェントのセッション一覧・実行記録・続きの地点 | `.agent-runs/`(読み書きは `.agent-runs/README.md`) |
 | 主張・研究課題・貢献・マイルストーン | `docs/thesis-plan.md` |
 | 撤回した主張・繰り返さない失敗 | `docs/guardrails.md` |
 | 案・却下した案 | `docs/ideas.md` |
