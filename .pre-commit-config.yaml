@@ -28,5 +28,6 @@ repos:
       - id: end-of-file-fixer
         exclude: '\.bib$' # bib files are regenerated exports; avoid churn
       - id: trailing-whitespace
-        exclude: '\.bib$'
+        # Retain the byte-for-byte shared tools, including their upstream whitespace.
+        exclude: '\.bib$|^\.agent-runs/shared/tools/'
       - id: mixed-line-ending
