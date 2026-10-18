@@ -17,7 +17,10 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = [".cache"]
+# Shared workflow tools are copied verbatim across repositories; retain their source format.
+extend-exclude = [".cache", ".agent-runs"]
+# Pre-commit passes explicit paths: keep the shared copies excluded there as well.
+force-exclude = true
 
 [tool.ruff.lint]
 # Full-width punctuation is normal in Japanese comments and strings.
